@@ -1,12 +1,13 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp, type RealtimeMode } from './app.js';
+import { resolveDatabaseUrl } from './config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
 
 const port = Number(process.env.PORT ?? 3001);
-const databaseUrl = process.env.DATABASE_URL ?? null;
+const databaseUrl = resolveDatabaseUrl();
 const dataFile = process.env.DATA_FILE ?? path.join(repoRoot, 'data', 'db.json');
 const clientDir = process.env.CLIENT_DIR ?? path.join(repoRoot, 'client', 'dist');
 const realtime = (process.env.REALTIME as RealtimeMode | undefined) ?? undefined;

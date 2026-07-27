@@ -9,15 +9,20 @@
  * caliente, las peticiones siguientes reutilizan el pool de conexiones.
  */
 import { createApp } from '../server/src/app.js';
+import {
+  CONNECTION_VARIABLE_NAMES,
+  resolveDatabaseUrl,
+} from '../server/src/config.js';
 
-const databaseUrl = process.env.DATABASE_URL ?? null;
+const databaseUrl = resolveDatabaseUrl();
 
 if (!databaseUrl) {
   // Sin base de datos, cada invocación arrancaría vacía y las preguntas se
   // perderían en medio de la clase. Conviene que se vea en los logs de entrada.
   console.error(
-    'Falta DATABASE_URL. En Vercel el sistema de archivos no persiste entre ' +
-      'invocaciones: hay que configurar Postgres (Vercel Postgres, Neon o Supabase).',
+    `Falta la cadena de conexión (${CONNECTION_VARIABLE_NAMES}). En Vercel el ` +
+      'sistema de archivos no persiste entre invocaciones: hay que configurar ' +
+      'Postgres (Neon, Vercel Postgres o Supabase).',
   );
 }
 

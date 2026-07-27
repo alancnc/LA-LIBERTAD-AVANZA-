@@ -76,6 +76,8 @@ Pasos:
 1. Importar el repositorio en Vercel. `vercel.json` ya define el build del
    cliente, el ruteo de `/api/*` a la función y el fallback del SPA.
 2. Crear la base y cargar `DATABASE_URL` en *Settings → Environment Variables*.
+   También se acepta `POSTGRES_URL`: según el proveedor, la integración de
+   Vercel inyecta uno u otro nombre, y la app toma el primero que encuentre.
 3. Desplegar.
 
 ### Elegir proveedor de Postgres
@@ -219,12 +221,12 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 57 tests: motor de agrupamiento, calidad y API
+npm test         # 62 tests: motor de agrupamiento, calidad y API
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia y de seguridad de la base (87 en total):
+se suman los tests de concurrencia y de seguridad de la base (92 en total):
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test
