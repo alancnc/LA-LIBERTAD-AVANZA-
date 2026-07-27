@@ -73,8 +73,8 @@ entender antes:
 
 Pasos:
 
-1. Importar el repositorio en Vercel. `vercel.json` ya define el build del
-   cliente, el ruteo de `/api/*` a la función y el fallback del SPA.
+1. Importar el repositorio en Vercel. `vercel.json` ya define la instalación,
+   el build del cliente, el ruteo de `/api/*` a la función y el fallback del SPA.
 2. Crear la base y cargar `DATABASE_URL` en *Settings → Environment Variables*.
    También se acepta `POSTGRES_URL`: según el proveedor, la integración de
    Vercel inyecta uno u otro nombre, y la app toma el primero que encuentre.
@@ -94,6 +94,18 @@ poco volumen, así que el plan gratuito de cualquiera sobra.
 
 En serverless siempre conviene la cadena **con pooler**: cada invocación abre su
 propia conexión y una base chica se queda sin cupo enseguida.
+
+### Por qué el install lleva flags explícitas
+
+`vercel.json` instala con `npm install --workspaces --include-workspace-root`.
+Sin esas flags, Vercel resuelve un árbol parcial (178 paquetes en lugar de 242)
+que deja afuera dependencias de desarrollo de los workspaces, y el build del
+cliente se cae porque le faltan `@vitejs/plugin-react` y los tipos de React.
+
+Por el mismo motivo el build del cliente es sólo `vite build`: la verificación
+de tipos y los tests corren en CI (`.github/workflows/ci.yml`), que es donde
+corresponde. Empaquetar y verificar tipos son cosas distintas, y un error de
+tipos no debería tirar abajo un despliegue de algo que funciona.
 
 ### Seguridad de la base
 

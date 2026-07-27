@@ -1,0 +1,52 @@
+name: CI
+
+# La verificación de tipos y los tests viven acá y no dentro del build de
+# despliegue: son cosas distintas. El build sólo tiene que empaquetar, y si
+# falla por tipos se cae un deploy por un problema que no impide que la app
+# funcione. Acá, en cambio, se corre todo y contra Postgres de verdad.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: preguntas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm install --workspaces --include-workspace-root
+
+      - name: Verificar tipos
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+        env:
+          # Con esto la batería corre además contra Postgres y se suman los
+          # tests de concurrencia y de seguridad de la base.
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/preguntas_test?sslmode=disable
+
+      - name: Build
+        run: npm run build
