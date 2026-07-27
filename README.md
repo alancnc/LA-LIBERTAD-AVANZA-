@@ -112,6 +112,10 @@ completa, así que el build del cliente está armado para no depender de eso:
   de los workspaces, así que el comando funciona igual desde cualquiera de los
   dos. `"framework": null` evita además que la detección automática de Vercel
   cambie el directorio de trabajo.
+- **El cliente se emite en `dist/`, en la raíz del repositorio**, no en
+  `client/dist`. Vercel busca la salida en `dist` respecto de la raíz del
+  proyecto y no respeta una ruta con subcarpeta, así que se emite directamente
+  donde la va a encontrar.
 - El cliente **no usa `@vitejs/plugin-react`**. Ese plugin aporta React Fast
   Refresh y transforma el JSX con Babel, arrastrando unos 40 paquetes. Vite ya
   compila JSX con esbuild, así que se configura el runtime automático en
@@ -213,6 +217,7 @@ client/                    React + Vite + TypeScript
   src/pages/               inicio, vista de alumno, panel del docente
   src/components/          tarjeta de tema del ranking
   src/useLive.ts           sincronización en vivo (SSE o sondeo, según el server)
+dist/                      build del cliente (generado)
 api/index.ts               función serverless de Vercel
 ```
 

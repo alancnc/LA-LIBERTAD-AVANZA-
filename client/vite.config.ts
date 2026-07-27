@@ -36,7 +36,11 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    // Se emite en la raíz del repositorio y no en client/dist: Vercel busca la
+    // salida en "dist" respecto de la raíz del proyecto, sin respetar rutas con
+    // subcarpeta. Dejarlo acá evita depender de esa resolución.
+    outDir: '../dist',
+    emptyOutDir: true,
     sourcemap: true,
   },
 });

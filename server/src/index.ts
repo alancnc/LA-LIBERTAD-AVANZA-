@@ -9,7 +9,7 @@ const repoRoot = path.resolve(here, '../..');
 const port = Number(process.env.PORT ?? 3001);
 const databaseUrl = resolveDatabaseUrl();
 const dataFile = process.env.DATA_FILE ?? path.join(repoRoot, 'data', 'db.json');
-const clientDir = process.env.CLIENT_DIR ?? path.join(repoRoot, 'client', 'dist');
+const clientDir = process.env.CLIENT_DIR ?? path.join(repoRoot, 'dist');
 const realtime = (process.env.REALTIME as RealtimeMode | undefined) ?? undefined;
 
 const { app, repository } = createApp({ databaseUrl, dataFile, clientDir, realtime });

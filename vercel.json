@@ -3,14 +3,20 @@
   "framework": null,
   "installCommand": "npm install --workspaces --include-workspace-root --include=dev",
   "buildCommand": "npm install --workspace=client --include=dev && npm run build -w client",
-  "outputDirectory": "client/dist",
+  "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
       "maxDuration": 15
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }
