@@ -95,17 +95,23 @@ poco volumen, así que el plan gratuito de cualquiera sobra.
 En serverless siempre conviene la cadena **con pooler**: cada invocación abre su
 propia conexión y una base chica se queda sin cupo enseguida.
 
-### Por qué el install lleva flags explícitas
+### Notas sobre el build
 
-`vercel.json` instala con `npm install --workspaces --include-workspace-root`.
-Sin esas flags, Vercel resuelve un árbol parcial (178 paquetes en lugar de 242)
-que deja afuera dependencias de desarrollo de los workspaces, y el build del
-cliente se cae porque le faltan `@vitejs/plugin-react` y los tipos de React.
+Vercel resuelve un árbol de dependencias más chico que una instalación local
+completa, así que el build del cliente está armado para no depender de eso:
 
-Por el mismo motivo el build del cliente es sólo `vite build`: la verificación
-de tipos y los tests corren en CI (`.github/workflows/ci.yml`), que es donde
-corresponde. Empaquetar y verificar tipos son cosas distintas, y un error de
-tipos no debería tirar abajo un despliegue de algo que funciona.
+- El install es explícito: `npm install --workspaces --include-workspace-root
+  --include=dev`, para que las dependencias de desarrollo entren aunque el
+  entorno de build fije `NODE_ENV=production`.
+- El cliente **no usa `@vitejs/plugin-react`**. Ese plugin aporta React Fast
+  Refresh y transforma el JSX con Babel, arrastrando unos 40 paquetes. Vite ya
+  compila JSX con esbuild, así que se configura el runtime automático en
+  `vite.config.ts` y listo. Lo único que se pierde: al editar un componente en
+  desarrollo, el módulo se recarga entero en vez de preservar su estado.
+- El build es sólo `vite build`. La verificación de tipos y los tests corren en
+  CI (`.github/workflows/ci.yml`), que es donde corresponde: empaquetar y
+  verificar tipos son cosas distintas, y un error de tipos no debería tirar
+  abajo el despliegue de algo que funciona.
 
 ### Seguridad de la base
 
