@@ -1,5 +1,6 @@
-import { DEFAULT_THRESHOLD, findBestCluster, type ClusterCandidate } from './text/cluster.js';
-import { generateAdminKey, generateRoomCode, newId, type Store } from './store.js';
+import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
+import { generateAdminKey, generateRoomCode, newId } from './ids.js';
+import type { Repository } from './repository/types.js';
 import type {
   Cluster,
   ClusterStatus,
@@ -21,68 +22,64 @@ export class ServiceError extends Error {
 }
 
 export class Service {
-  constructor(private readonly store: Store) {}
+  constructor(private readonly repository: Repository) {}
 
   // ---------------------------------------------------------------- salas
 
-  createRoom(title: string): { room: Room; adminKey: string } {
+  async createRoom(title: string): Promise<{ room: Room; adminKey: string }> {
     const cleanTitle = title.trim().slice(0, MAX_TITLE_LENGTH) || 'Clase sin título';
-    return this.store.update((data) => {
-      const code = generateRoomCode((candidate) =>
-        data.rooms.some((room) => room.code === candidate),
-      );
-      const room: Room = {
-        id: newId(),
-        code,
-        title: cleanTitle,
-        adminKey: generateAdminKey(),
-        threshold: DEFAULT_THRESHOLD,
-        closed: false,
-        createdAt: Date.now(),
-      };
-      data.rooms.push(room);
-      return { room, adminKey: room.adminKey };
-    });
+    const code = await generateRoomCode((candidate) => this.repository.isRoomCodeTaken(candidate));
+
+    const room: Room = {
+      id: newId(),
+      code,
+      title: cleanTitle,
+      adminKey: generateAdminKey(),
+      threshold: DEFAULT_THRESHOLD,
+      closed: false,
+      createdAt: Date.now(),
+    };
+    await this.repository.createRoom(room);
+    return { room, adminKey: room.adminKey };
   }
 
-  getRoomByCode(code: string): Room {
-    const normalized = code.trim().toUpperCase();
-    const room = this.store.read().rooms.find((item) => item.code === normalized);
+  async getRoomByCode(code: string): Promise<Room> {
+    const room = await this.repository.getRoomByCode(code.trim().toUpperCase());
     if (!room) throw new ServiceError(404, 'No existe una sala con ese código');
     return room;
   }
 
   /** Valida la clave de administrador de una sala y devuelve la sala. */
-  requireAdmin(code: string, adminKey: string | undefined): Room {
-    const room = this.getRoomByCode(code);
+  async requireAdmin(code: string, adminKey: string | undefined): Promise<Room> {
+    const room = await this.getRoomByCode(code);
     if (!adminKey || adminKey !== room.adminKey) {
       throw new ServiceError(403, 'Clave de administrador inválida');
     }
     return room;
   }
 
-  updateRoom(
+  async updateRoom(
     room: Room,
     changes: { title?: string; closed?: boolean; threshold?: number },
-  ): Room {
-    return this.store.update((data) => {
-      const target = data.rooms.find((item) => item.id === room.id)!;
-      if (changes.title !== undefined) {
-        const cleanTitle = changes.title.trim().slice(0, MAX_TITLE_LENGTH);
-        if (cleanTitle) target.title = cleanTitle;
+  ): Promise<Room> {
+    let title: string | undefined;
+    if (changes.title !== undefined) {
+      const cleanTitle = changes.title.trim().slice(0, MAX_TITLE_LENGTH);
+      if (cleanTitle) title = cleanTitle;
+    }
+    if (changes.threshold !== undefined) {
+      if (
+        !Number.isFinite(changes.threshold) ||
+        changes.threshold < 0.15 ||
+        changes.threshold > 0.9
+      ) {
+        throw new ServiceError(400, 'El umbral debe estar entre 0.15 y 0.9');
       }
-      if (changes.closed !== undefined) target.closed = changes.closed;
-      if (changes.threshold !== undefined) {
-        if (
-          !Number.isFinite(changes.threshold) ||
-          changes.threshold < 0.15 ||
-          changes.threshold > 0.9
-        ) {
-          throw new ServiceError(400, 'El umbral debe estar entre 0.15 y 0.9');
-        }
-        target.threshold = changes.threshold;
-      }
-      return target;
+    }
+    return this.repository.updateRoom(room.id, {
+      title,
+      closed: changes.closed,
+      threshold: changes.threshold,
     });
   }
 
@@ -92,10 +89,10 @@ export class Service {
    * Registra una pregunta y la asigna al grupo que le corresponda.
    * Si ninguna similitud supera el umbral de la sala, abre un tema nuevo.
    */
-  addQuestion(
+  async addQuestion(
     room: Room,
     input: { text: string; author: string; voterId: string },
-  ): { question: Question; cluster: Cluster; isNewCluster: boolean; score: number } {
+  ): Promise<{ question: Question; cluster: Cluster; isNewCluster: boolean; score: number }> {
     if (room.closed) {
       throw new ServiceError(409, 'La sala está cerrada: ya no se aceptan preguntas');
     }
@@ -108,174 +105,93 @@ export class Service {
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
-    return this.store.update((data) => {
-      const roomQuestions = data.questions.filter(
-        (question) => question.roomId === room.id && !question.hidden,
-      );
-      const roomClusters = data.clusters.filter((cluster) => cluster.roomId === room.id);
-
-      const candidates: ClusterCandidate[] = roomClusters
-        // Un tema ya respondido o descartado no debería absorber preguntas nuevas:
-        // si vuelven a preguntar lo mismo, el docente necesita verlo de nuevo.
-        .filter((cluster) => cluster.status === 'pending' || cluster.status === 'answering')
-        .map((cluster) => ({
-          clusterId: cluster.id,
-          texts: roomQuestions
-            .filter((question) => question.clusterId === cluster.id)
-            .map((question) => question.text),
-        }))
-        .filter((candidate) => candidate.texts.length > 0);
-
-      const match = findBestCluster(text, candidates, room.threshold);
-
-      let cluster: Cluster;
-      let isNewCluster = false;
-      if (match.clusterId) {
-        cluster = data.clusters.find((item) => item.id === match.clusterId)!;
-      } else {
-        cluster = {
-          id: newId(),
-          roomId: room.id,
-          label: text,
-          status: 'pending',
-          note: '',
-          createdAt: Date.now(),
-          answeredAt: null,
-        };
-        data.clusters.push(cluster);
-        isNewCluster = true;
-      }
-
-      const question: Question = {
-        id: newId(),
-        roomId: room.id,
-        clusterId: cluster.id,
-        text,
-        author,
-        voterId,
-        upvotes: [],
-        createdAt: Date.now(),
-        hidden: false,
-      };
-      data.questions.push(question);
-
-      return { question, cluster, isNewCluster, score: match.score };
-    });
+    return this.repository.addQuestion({ roomId: room.id, text, author, voterId }, (candidates) =>
+      findBestCluster(text, candidates, room.threshold),
+    );
   }
 
   /** Alterna el voto de un participante sobre una pregunta. */
-  toggleUpvote(room: Room, questionId: string, voterId: string): { upvotes: number; voted: boolean } {
+  async toggleUpvote(
+    room: Room,
+    questionId: string,
+    voterId: string,
+  ): Promise<{ upvotes: number; voted: boolean }> {
     if (room.closed) throw new ServiceError(409, 'La sala está cerrada');
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
-    return this.store.update((data) => {
-      const question = data.questions.find(
-        (item) => item.id === questionId && item.roomId === room.id,
-      );
-      if (!question) throw new ServiceError(404, 'No existe esa pregunta');
-      if (question.voterId === voterId) {
-        throw new ServiceError(400, 'No podés votar tu propia pregunta');
-      }
-
-      const index = question.upvotes.indexOf(voterId);
-      if (index >= 0) {
-        question.upvotes.splice(index, 1);
-        return { upvotes: question.upvotes.length, voted: false };
-      }
-      question.upvotes.push(voterId);
-      return { upvotes: question.upvotes.length, voted: true };
-    });
+    const question = await this.repository.getQuestion(room.id, questionId);
+    if (!question) throw new ServiceError(404, 'No existe esa pregunta');
+    if (question.voterId === voterId) {
+      throw new ServiceError(400, 'No podés votar tu propia pregunta');
+    }
+    return this.repository.toggleVote(room.id, questionId, voterId);
   }
 
   /** Oculta una pregunta (moderación). No se borra, para poder revisarla luego. */
-  hideQuestion(room: Room, questionId: string): void {
-    this.store.update((data) => {
-      const question = data.questions.find(
-        (item) => item.id === questionId && item.roomId === room.id,
-      );
-      if (!question) throw new ServiceError(404, 'No existe esa pregunta');
-      question.hidden = true;
-    });
+  async hideQuestion(room: Room, questionId: string): Promise<void> {
+    const question = await this.repository.getQuestion(room.id, questionId);
+    if (!question) throw new ServiceError(404, 'No existe esa pregunta');
+    await this.repository.hideQuestion(room.id, questionId);
   }
 
   /** Saca una pregunta de su grupo y le abre un tema propio. */
-  splitQuestion(room: Room, questionId: string): Cluster {
-    return this.store.update((data) => {
-      const question = data.questions.find(
-        (item) => item.id === questionId && item.roomId === room.id,
-      );
-      if (!question) throw new ServiceError(404, 'No existe esa pregunta');
+  async splitQuestion(room: Room, questionId: string): Promise<Cluster> {
+    const question = await this.repository.getQuestion(room.id, questionId);
+    if (!question) throw new ServiceError(404, 'No existe esa pregunta');
 
-      const siblings = data.questions.filter(
-        (item) => item.clusterId === question.clusterId && !item.hidden,
-      );
-      if (siblings.length <= 1) {
-        throw new ServiceError(400, 'La pregunta ya es el único tema de su grupo');
-      }
+    const board = await this.repository.getBoardData(room.id);
+    const siblings = board.questions.filter((item) => item.clusterId === question.clusterId);
+    if (siblings.length <= 1) {
+      throw new ServiceError(400, 'La pregunta ya es el único tema de su grupo');
+    }
 
-      const cluster: Cluster = {
-        id: newId(),
-        roomId: room.id,
-        label: question.text,
-        status: 'pending',
-        note: '',
-        createdAt: Date.now(),
-        answeredAt: null,
-      };
-      data.clusters.push(cluster);
-      question.clusterId = cluster.id;
-      return cluster;
-    });
+    const cluster: Cluster = {
+      id: newId(),
+      roomId: room.id,
+      label: question.text,
+      status: 'pending',
+      note: '',
+      createdAt: Date.now(),
+      answeredAt: null,
+    };
+    return this.repository.splitQuestion(room.id, questionId, cluster);
   }
 
   // -------------------------------------------------------------- grupos
 
-  updateCluster(
+  async updateCluster(
     room: Room,
     clusterId: string,
     changes: { status?: ClusterStatus; label?: string; note?: string },
-  ): Cluster {
-    return this.store.update((data) => {
-      const cluster = data.clusters.find(
-        (item) => item.id === clusterId && item.roomId === room.id,
-      );
-      if (!cluster) throw new ServiceError(404, 'No existe ese grupo');
+  ): Promise<Cluster> {
+    const cluster = await this.repository.getCluster(room.id, clusterId);
+    if (!cluster) throw new ServiceError(404, 'No existe ese grupo');
 
-      if (changes.status !== undefined) {
-        cluster.status = changes.status;
-        cluster.answeredAt = changes.status === 'answered' ? Date.now() : null;
-      }
-      if (changes.label !== undefined) {
-        const label = changes.label.trim().slice(0, MAX_QUESTION_LENGTH);
-        if (label) cluster.label = label;
-      }
-      if (changes.note !== undefined) {
-        cluster.note = changes.note.trim().slice(0, MAX_QUESTION_LENGTH);
-      }
-      return cluster;
+    let label: string | undefined;
+    if (changes.label !== undefined) {
+      const clean = changes.label.trim().slice(0, MAX_QUESTION_LENGTH);
+      if (clean) label = clean;
+    }
+    const note =
+      changes.note === undefined ? undefined : changes.note.trim().slice(0, MAX_QUESTION_LENGTH);
+
+    return this.repository.updateCluster(room.id, clusterId, {
+      status: changes.status,
+      label,
+      note,
     });
   }
 
   /** Fusiona dos grupos que en realidad son el mismo tema. */
-  mergeClusters(room: Room, sourceId: string, targetId: string): Cluster {
+  async mergeClusters(room: Room, sourceId: string, targetId: string): Promise<Cluster> {
     if (sourceId === targetId) {
       throw new ServiceError(400, 'No se puede fusionar un grupo consigo mismo');
     }
-    return this.store.update((data) => {
-      const source = data.clusters.find(
-        (item) => item.id === sourceId && item.roomId === room.id,
-      );
-      const target = data.clusters.find(
-        (item) => item.id === targetId && item.roomId === room.id,
-      );
-      if (!source || !target) throw new ServiceError(404, 'No existe alguno de los grupos');
+    const source = await this.repository.getCluster(room.id, sourceId);
+    const target = await this.repository.getCluster(room.id, targetId);
+    if (!source || !target) throw new ServiceError(404, 'No existe alguno de los grupos');
 
-      for (const question of data.questions) {
-        if (question.clusterId === source.id) question.clusterId = target.id;
-      }
-      data.clusters = data.clusters.filter((item) => item.id !== source.id);
-      return target;
-    });
+    return this.repository.mergeClusters(room.id, sourceId, targetId);
   }
 
   // ------------------------------------------------------------- ranking
@@ -287,12 +203,8 @@ export class Service {
    * preguntó (aunque haya reformulado) más quien votó una de esas preguntas.
    * Los temas ya respondidos o descartados caen al final.
    */
-  getBoard(room: Room, viewerId: string): RankedCluster[] {
-    const data = this.store.read();
-    const questions = data.questions.filter(
-      (question) => question.roomId === room.id && !question.hidden,
-    );
-    const clusters = data.clusters.filter((cluster) => cluster.roomId === room.id);
+  async getBoard(room: Room, viewerId: string): Promise<RankedCluster[]> {
+    const { clusters, questions } = await this.repository.getBoardData(room.id);
 
     const byCluster = new Map<string, Question[]>();
     for (const question of questions) {
@@ -356,18 +268,15 @@ export class Service {
   }
 
   /** Números de cabecera para el panel del docente. */
-  getStats(room: Room): {
+  async getStats(room: Room): Promise<{
     questionCount: number;
     clusterCount: number;
     pendingCount: number;
     answeredCount: number;
     participants: number;
-  } {
-    const data = this.store.read();
-    const questions = data.questions.filter(
-      (question) => question.roomId === room.id && !question.hidden,
-    );
-    const clusters = data.clusters.filter((cluster) => cluster.roomId === room.id);
+  }> {
+    const { clusters, questions } = await this.repository.getBoardData(room.id);
+
     const activeClusterIds = new Set(questions.map((question) => question.clusterId));
     const participants = new Set(questions.map((question) => question.voterId));
     for (const question of questions) {

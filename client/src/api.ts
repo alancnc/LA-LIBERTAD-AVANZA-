@@ -168,7 +168,28 @@ export const api = {
 };
 
 /**
- * Escucha las novedades de la sala por SSE y avisa cada vez que hay que refrescar.
+ * Cómo se entera esta app de que el tablero cambió.
+ *
+ * - `sse`: el servidor empuja los cambios por una conexión abierta.
+ * - `poll`: el cliente pregunta cada pocos segundos. Es lo que corresponde en
+ *   despliegues serverless (Vercel), donde no hay un proceso persistente que
+ *   sostenga la conexión.
+ */
+export type RealtimeMode = 'sse' | 'poll';
+
+let realtimeMode: Promise<RealtimeMode> | null = null;
+
+/** Se consulta una vez por carga de página y se reutiliza. */
+export function getRealtimeMode(): Promise<RealtimeMode> {
+  realtimeMode ??= call<{ realtime: RealtimeMode }>('GET', '/config')
+    .then((config) => config.realtime)
+    // Ante la duda, sondear: funciona en todos lados.
+    .catch(() => 'poll' as const);
+  return realtimeMode;
+}
+
+/**
+ * Escucha las novedades de la sala y avisa cada vez que hay que refrescar.
  * Devuelve la función para cortar la conexión.
  */
 export function listenToRoom(code: string, onChange: () => void): () => void {

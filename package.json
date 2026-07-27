@@ -12,10 +12,11 @@
     "build": "npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
     "test": "npm run test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client && tsc -p api/tsconfig.json"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20"

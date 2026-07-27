@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listenToRoom } from './api.js';
+import { getRealtimeMode, listenToRoom } from './api.js';
+
+/** Cada cuánto se refresca cuando el servidor no puede empujar los cambios. */
+const POLL_INTERVAL_MS = 4_000;
+/** Refresco de respaldo con SSE activo, por si un proxy corta el stream sin avisar. */
+const SSE_FALLBACK_INTERVAL_MS = 15_000;
 
 /**
  * Mantiene un dato de la sala sincronizado.
  *
- * La vía principal es SSE (llega al instante). Además se refresca cada 15s como
- * red de seguridad, por si un proxy corta el stream sin avisar.
+ * Se adapta a lo que soporte el despliegue: con un proceso persistente usa SSE
+ * (los cambios llegan al instante); en serverless sondea cada pocos segundos.
  */
 export function useLive<T>(
   code: string | undefined,
@@ -24,7 +29,7 @@ export function useLive<T>(
   const [connected, setConnected] = useState(false);
 
   // El fetcher se recrea en cada render; guardarlo en una ref evita
-  // reabrir el stream SSE cada vez.
+  // reabrir la suscripción cada vez.
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -43,20 +48,32 @@ export function useLive<T>(
   useEffect(() => {
     if (!code) return;
     let active = true;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let stopStream: (() => void) | undefined;
 
     const refresh = () => {
       if (active) void load();
     };
 
     refresh();
-    const stop = listenToRoom(code, refresh);
-    setConnected(true);
-    const interval = setInterval(refresh, 15_000);
+
+    void getRealtimeMode().then((mode) => {
+      // El modo llega de forma asíncrona: si el componente ya se desmontó,
+      // no hay que abrir nada.
+      if (!active) return;
+      if (mode === 'sse') {
+        stopStream = listenToRoom(code, refresh);
+        interval = setInterval(refresh, SSE_FALLBACK_INTERVAL_MS);
+      } else {
+        interval = setInterval(refresh, POLL_INTERVAL_MS);
+      }
+      setConnected(true);
+    });
 
     return () => {
       active = false;
-      clearInterval(interval);
-      stop();
+      if (interval) clearInterval(interval);
+      stopStream?.();
       setConnected(false);
     };
   }, [code, load, ...deps]);

@@ -48,20 +48,45 @@ npm install
 npm run dev          # cliente en :5173, API en :3001
 ```
 
-Para producción, el servidor sirve también el frontend ya compilado:
+Para producción como proceso único, el servidor sirve también el frontend:
 
 ```bash
 npm run build
 npm start            # todo en http://localhost:3001
 ```
 
-Variables de entorno del servidor:
+Sin `DATABASE_URL` los datos van a un archivo JSON, que alcanza de sobra para un
+solo proceso. Ver `.env.example` para el resto de las variables.
 
-| Variable     | Por defecto        | Para qué                                  |
-|--------------|--------------------|-------------------------------------------|
-| `PORT`       | `3001`             | Puerto del servidor                       |
-| `DATA_FILE`  | `data/db.json`     | Archivo donde se guarda todo              |
-| `CLIENT_DIR` | `client/dist`      | Build del frontend a servir               |
+## Despliegue en Vercel
+
+La app corre en Vercel, pero el modelo serverless impone dos cosas que conviene
+entender antes:
+
+- **Hace falta Postgres.** El disco de una función no persiste entre
+  invocaciones: sin base de datos las preguntas se perderían en medio de la
+  clase. Sirve cualquier proveedor con una URL de conexión (Vercel Postgres,
+  Neon, Supabase). Las tablas se crean solas en el primer arranque.
+- **No hay SSE.** Sin un proceso persistente que sostenga la conexión, el
+  cliente pasa a sondear cada 4 segundos. Lo decide en tiempo de ejecución
+  consultando `/api/config`, así que el mismo código funciona en los dos modos
+  sin recompilar.
+
+Pasos:
+
+1. Importar el repositorio en Vercel. `vercel.json` ya define el build del
+   cliente, el ruteo de `/api/*` a la función y el fallback del SPA.
+2. Crear la base y cargar `DATABASE_URL` en *Settings → Environment Variables*.
+3. Desplegar.
+
+```
+vercel.json          rewrites + build del cliente
+api/index.ts         función serverless: exporta la app de Express
+```
+
+Para desplegar en Render, Railway, Fly.io o un VPS no hace falta nada de esto:
+con `npm run build && npm start` queda un proceso único con SSE y, si no se
+configura Postgres, persistencia en archivo.
 
 ## Cómo agrupa las preguntas
 
@@ -123,40 +148,59 @@ server/                    API en Express + TypeScript
     similarity.ts          IDF, match difuso de palabras, trigramas
     cluster.ts             asignación a grupos y umbral
     fixtures.ts            preguntas etiquetadas para medir calidad
+  src/repository/          persistencia intercambiable
+    types.ts               contrato por operación
+    memory.ts              archivo JSON, para proceso único
+    postgres.ts            Postgres, para serverless
   src/service.ts           reglas de negocio (salas, votos, ranking)
-  src/app.ts               rutas HTTP y SSE
-  src/store.ts             persistencia en JSON
+  src/app.ts               rutas HTTP, SSE y modo de tiempo real
   src/tools/calibrate.ts   medición del umbral
 client/                    React + Vite + TypeScript
   src/pages/               inicio, vista de alumno, panel del docente
   src/components/          tarjeta de tema del ranking
-  src/useLive.ts           sincronización en vivo (SSE + refresco de respaldo)
+  src/useLive.ts           sincronización en vivo (SSE o sondeo, según el server)
+api/index.ts               función serverless de Vercel
 ```
 
 ## Detalles de implementación
 
-- **En vivo por SSE**, con un refresco cada 15s como red de seguridad por si un
-  proxy corta el stream.
+- **Tiempo real adaptativo.** Con un proceso persistente se usa SSE y los
+  cambios llegan al instante; en serverless el cliente sondea. El servidor
+  informa cuál corresponde en `/api/config`.
 - **Sin cuentas de usuario.** Cada navegador genera un id anónimo en
   `localStorage` para saber qué preguntó y votó. El acceso al panel es una clave
   por sala, generada al crearla y guardada en el navegador del docente; se puede
   abrir en otro dispositivo con `/admin/CODIGO?key=LA_CLAVE`.
-- **Persistencia en un archivo JSON**, escrito con archivo temporal + rename
-  para que nunca quede a medio escribir. Alcanza de sobra para el caso de uso y
-  evita dependencias nativas.
+- **Dos persistencias tras la misma interfaz.** Archivo JSON (escrito con
+  temporal + rename, para que nunca quede a medio escribir) o Postgres. La
+  batería de tests corre entera contra ambas, así el despliegue serverless se
+  comporta igual que el local.
+- **Preguntas simultáneas serializadas por sala.** En Postgres, insertar una
+  pregunta toma el lock de la fila de su sala dentro de la transacción. Sin eso,
+  varios alumnos preguntando lo mismo a la vez crean grupos duplicados; está
+  cubierto por un test que efectivamente falla si se saca el lock.
 
 ### Límites conocidos
 
 - La clave de sala es el único control de acceso al panel: quien la tenga, entra.
   No hay roles ni auditoría.
-- El estado vive en un solo proceso (los eventos SSE se emiten en memoria), así
-  que no escala horizontalmente sin mover el estado a una base compartida.
+- Con archivo JSON el estado vive en un solo proceso y no escala en horizontal;
+  para eso está el repositorio Postgres.
 - Sin límite de frecuencia por participante: en un aula abierta a internet
   convendría agregar rate limiting antes de exponerlo.
+- El sondeo de 4 segundos consume invocaciones en Vercel. Para una clase es
+  irrelevante, pero conviene tenerlo en cuenta con muchas salas simultáneas.
 
 ## Tests
 
 ```bash
-npm test         # 49 tests: motor de agrupamiento, calidad y API
+npm test         # 52 tests: motor de agrupamiento, calidad y API
 npm run typecheck
+```
+
+Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
+se suman los tests de concurrencia (80 en total):
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test
 ```
