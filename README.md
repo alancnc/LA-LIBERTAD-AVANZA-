@@ -100,9 +100,15 @@ propia conexión y una base chica se queda sin cupo enseguida.
 Vercel resuelve un árbol de dependencias más chico que una instalación local
 completa, así que el build del cliente está armado para no depender de eso:
 
-- El install es explícito: `npm install --workspaces --include-workspace-root
-  --include=dev`, para que las dependencias de desarrollo entren aunque el
-  entorno de build fije `NODE_ENV=production`.
+- **El cliente se instala aparte, dentro del `buildCommand`.** Vercel resuelve
+  la instalación en función de lo que necesita la función serverless, así que
+  instala la raíz y el workspace `server` y se saltea `client` entero: quedan
+  201 paquetes en vez de 214 y falta React. Por eso el build empieza con
+  `cd client && npm install --no-workspaces`, que instala las dependencias del
+  cliente en `client/node_modules` sin depender de cómo se resuelvan los
+  workspaces. Reproducible en local con
+  `npm install --include-workspace-root --workspace=server`, que da exactamente
+  los mismos 201 paquetes y el mismo error.
 - El cliente **no usa `@vitejs/plugin-react`**. Ese plugin aporta React Fast
   Refresh y transforma el JSX con Babel, arrastrando unos 40 paquetes. Vite ya
   compila JSX con esbuild, así que se configura el runtime automático en

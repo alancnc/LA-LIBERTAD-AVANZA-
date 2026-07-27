@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install --workspaces --include-workspace-root --include=dev",
-  "buildCommand": "npm run build -w client",
+  "buildCommand": "cd client && npm install --no-workspaces --include=dev && npm run build",
   "outputDirectory": "client/dist",
   "functions": {
     "api/index.ts": {
