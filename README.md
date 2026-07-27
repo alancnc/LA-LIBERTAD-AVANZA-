@@ -65,8 +65,7 @@ entender antes:
 
 - **Hace falta Postgres.** El disco de una función no persiste entre
   invocaciones: sin base de datos las preguntas se perderían en medio de la
-  clase. Sirve cualquier proveedor con una URL de conexión (Vercel Postgres,
-  Neon, Supabase). Las tablas se crean solas en el primer arranque.
+  clase. Las tablas se crean solas en el primer arranque.
 - **No hay SSE.** Sin un proceso persistente que sostenga la conexión, el
   cliente pasa a sondear cada 4 segundos. Lo decide en tiempo de ejecución
   consultando `/api/config`, así que el mismo código funciona en los dos modos
@@ -79,10 +78,36 @@ Pasos:
 2. Crear la base y cargar `DATABASE_URL` en *Settings → Environment Variables*.
 3. Desplegar.
 
-```
-vercel.json          rewrites + build del cliente
-api/index.ts         función serverless: exporta la app de Express
-```
+### Elegir proveedor de Postgres
+
+Sirve cualquiera que dé una cadena de conexión. Los datos son texto plano y muy
+poco volumen, así que el plan gratuito de cualquiera sobra.
+
+| Proveedor | Nota |
+|---|---|
+| **Neon** (vía Vercel Marketplace) | La opción con menos fricción: Vercel inyecta `DATABASE_URL` solo. |
+| Neon directo | Usar la cadena que incluye `-pooler` en el host. |
+| Supabase | Usar el **Transaction pooler** (puerto 6543). La conexión directa a `db.*.supabase.co` es sólo IPv6 y desde Vercel no resuelve. |
+| Vercel Postgres | Igual que Neon; es lo mismo por debajo. |
+
+En serverless siempre conviene la cadena **con pooler**: cada invocación abre su
+propia conexión y una base chica se queda sin cupo enseguida.
+
+### Seguridad de la base
+
+El esquema activa Row Level Security en las cuatro tablas y no define ninguna
+política, de modo que sólo la dueña de las tablas (la app) las alcanza.
+
+Esto importa especialmente en Supabase, que publica el esquema `public` por su
+API REST con una clave que es pública por diseño: sin RLS, cualquiera podría
+leer la tabla de salas y quedarse con la clave de administrador de todas ellas.
+El esquema además revoca los permisos de los roles `anon` y `authenticated` si
+existen. En proveedores sin esos roles el paso se omite solo.
+
+El cifrado de la conexión se deriva del `sslmode` de la URL: `verify-full` o
+`verify-ca` validan el certificado del servidor (con `DATABASE_CA_CERT` si el
+proveedor requiere su raíz); cualquier otro valor cifra sin validar la cadena,
+que es lo que aceptan Supabase y Neon sin configuración extra.
 
 Para desplegar en Render, Railway, Fly.io o un VPS no hace falta nada de esto:
 con `npm run build && npm start` queda un proceso único con SSE y, si no se
@@ -194,12 +219,12 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 52 tests: motor de agrupamiento, calidad y API
+npm test         # 57 tests: motor de agrupamiento, calidad y API
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia (80 en total):
+se suman los tests de concurrencia y de seguridad de la base (87 en total):
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test

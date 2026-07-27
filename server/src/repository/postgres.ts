@@ -59,6 +59,35 @@ CREATE TABLE IF NOT EXISTS votes (
 CREATE INDEX IF NOT EXISTS clusters_room_idx  ON clusters(room_id);
 CREATE INDEX IF NOT EXISTS questions_room_idx ON questions(room_id);
 CREATE INDEX IF NOT EXISTS questions_cluster_idx ON questions(cluster_id);
+
+-- Row Level Security sin políticas: nadie llega a estas tablas salvo su dueño.
+--
+-- Importa sobre todo en Supabase, que publica automáticamente el esquema
+-- public a través de su API REST usando la "anon key", que es pública por
+-- diseño. Sin esto, cualquiera con esa clave podría leer la tabla de salas y
+-- quedarse con el admin_key de todas, es decir, tomar control de cualquier
+-- clase. Activar RLS y no definir ninguna política deja ese camino cerrado.
+--
+-- La aplicación no se ve afectada: conecta como dueña de las tablas, y el dueño
+-- no queda sujeto a RLS salvo que se use FORCE ROW LEVEL SECURITY.
+ALTER TABLE rooms     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clusters  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE votes     ENABLE ROW LEVEL SECURITY;
+
+-- Además de RLS, se quitan los permisos que Supabase concede por defecto a sus
+-- roles públicos. Los roles sólo existen ahí, así que se comprueba antes para
+-- no romper en Postgres común (Neon, Vercel Postgres o uno propio).
+DO $$
+DECLARE
+  rol TEXT;
+BEGIN
+  FOREACH rol IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = rol) THEN
+      EXECUTE format('REVOKE ALL ON rooms, clusters, questions, votes FROM %I', rol);
+    END IF;
+  END LOOP;
+END $$;
 `;
 
 interface RoomRow {
@@ -131,11 +160,37 @@ function toQuestion(row: QuestionRow): Question {
   };
 }
 
+/**
+ * Configuración TLS derivada del `sslmode` de la cadena de conexión.
+ *
+ * - `disable`: sin cifrado (sólo para una base local).
+ * - `verify-ca` / `verify-full`: se valida el certificado del servidor. Es lo
+ *   más seguro; puede requerir el certificado raíz del proveedor en
+ *   `DATABASE_CA_CERT`.
+ * - cualquier otro caso (lo habitual: `require`): se cifra la conexión pero no
+ *   se valida la cadena del certificado. Es lo que aceptan Supabase y Neon sin
+ *   configuración extra; protege de escuchas pasivas, no de un intermediario
+ *   activo que pueda suplantar al servidor.
+ */
+export function sslConfigFor(
+  connectionString: string,
+  caCertificate?: string,
+): pg.PoolConfig['ssl'] {
+  const mode = /[?&]sslmode=([^&]+)/.exec(connectionString)?.[1]?.toLowerCase();
+  if (mode === 'disable') return undefined;
+  if (mode === 'verify-ca' || mode === 'verify-full') {
+    return caCertificate
+      ? { rejectUnauthorized: true, ca: caCertificate }
+      : { rejectUnauthorized: true };
+  }
+  return { rejectUnauthorized: false };
+}
+
 export class PostgresRepository implements Repository {
   private readonly pool: pg.Pool;
   private ready: Promise<void> | null = null;
 
-  constructor(connectionString: string) {
+  constructor(connectionString: string, caCertificate = process.env.DATABASE_CA_CERT) {
     this.pool = new pg.Pool({
       connectionString,
       // En serverless conviven muchas instancias efímeras: pocas conexiones por
@@ -143,9 +198,7 @@ export class PostgresRepository implements Repository {
       max: 3,
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 10_000,
-      ssl: connectionString.includes('sslmode=disable')
-        ? undefined
-        : { rejectUnauthorized: false },
+      ssl: sslConfigFor(connectionString, caCertificate),
     });
   }
 
