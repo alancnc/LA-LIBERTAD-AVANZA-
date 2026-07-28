@@ -11,8 +11,15 @@ const databaseUrl = resolveDatabaseUrl();
 const dataFile = process.env.DATA_FILE ?? path.join(repoRoot, 'data', 'db.json');
 const clientDir = process.env.CLIENT_DIR ?? path.join(repoRoot, 'dist');
 const realtime = (process.env.REALTIME as RealtimeMode | undefined) ?? undefined;
+const adminPassword = process.env.ADMIN_PASSWORD ?? null;
 
-const { app, repository } = createApp({ databaseUrl, dataFile, clientDir, realtime });
+const { app, repository } = createApp({
+  databaseUrl,
+  dataFile,
+  clientDir,
+  realtime,
+  adminPassword,
+});
 
 const server = app.listen(port, () => {
   console.log(`Preguntas en vivo escuchando en http://localhost:${port}`);

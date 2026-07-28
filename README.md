@@ -24,14 +24,20 @@ son 6 temas. Esta app hace esa reducción sola.
 
 ## Cómo se usa
 
-**Docente**
+Hay dos áreas separadas.
 
-1. Entra al inicio, pone el nombre de la clase y crea la sala.
-2. Comparte el código de 6 caracteres (o el enlace) con los alumnos.
+**Docente — `/admin`, con contraseña**
+
+1. Entra con la contraseña de `ADMIN_PASSWORD` y ve todas sus clases.
+2. Crea una clase y comparte el código de 6 caracteres con los alumnos.
 3. Ve el ranking actualizarse en vivo y responde de arriba hacia abajo, marcando
    cada tema como *respondiendo ahora* → *respondida*.
 
-**Alumnos**
+Esa contraseña abre el panel de cualquier clase desde cualquier dispositivo.
+Cada clase tiene además una clave propia, que se genera al crearla y sirve para
+darle acceso a un ayudante sin entregarle el área completa.
+
+**Alumnos — la portada, sin contraseña**
 
 1. Entran con el código, escriben la pregunta (el nombre es opcional).
 2. Si alguien ya preguntó lo mismo, la app avisa que se sumó a ese tema y lo
@@ -241,8 +247,10 @@ api/index.ts               función serverless de Vercel
 
 ### Límites conocidos
 
-- La clave de sala es el único control de acceso al panel: quien la tenga, entra.
-  No hay roles ni auditoría.
+- El control de acceso son dos secretos compartidos: la contraseña del área del
+  docente y la clave de cada clase. Quien los tenga, entra. No hay cuentas,
+  roles ni auditoría, y tampoco límite de intentos: conviene una contraseña
+  larga.
 - Con archivo JSON el estado vive en un solo proceso y no escala en horizontal;
   para eso está el repositorio Postgres.
 - Sin límite de frecuencia por participante: en un aula abierta a internet
@@ -253,12 +261,12 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 62 tests: motor de agrupamiento, calidad y API
+npm test         # 79 tests: motor de agrupamiento, calidad, API y acceso
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia y de seguridad de la base (92 en total):
+se suman los tests de concurrencia y de seguridad de la base (109 en total):
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test

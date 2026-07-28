@@ -230,6 +230,13 @@ export class PostgresRepository implements Repository {
     return result.rows[0] ? toRoom(result.rows[0]) : null;
   }
 
+  async listRooms(): Promise<Room[]> {
+    const result = await this.pool.query<RoomRow>(
+      'SELECT * FROM rooms ORDER BY created_at DESC',
+    );
+    return result.rows.map(toRoom);
+  }
+
   async isRoomCodeTaken(code: string): Promise<boolean> {
     const result = await this.pool.query('SELECT 1 FROM rooms WHERE code = $1', [code]);
     return result.rowCount !== null && result.rowCount > 0;

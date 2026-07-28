@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
 import type { Repository } from './repository/types.js';
@@ -21,8 +22,76 @@ export class ServiceError extends Error {
   }
 }
 
+/**
+ * Comparación en tiempo constante, para que el tiempo de respuesta no permita
+ * ir adivinando la contraseña carácter por carácter.
+ */
+function secretsMatch(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
 export class Service {
-  constructor(private readonly repository: Repository) {}
+  /**
+   * @param masterPassword Contraseña del panel general del docente. Si es null,
+   *   ese panel queda deshabilitado y sólo se puede entrar sala por sala con su
+   *   clave propia.
+   */
+  constructor(
+    private readonly repository: Repository,
+    private readonly masterPassword: string | null = null,
+  ) {}
+
+  get masterAdminEnabled(): boolean {
+    return this.masterPassword !== null;
+  }
+
+  /** Valida la contraseña del panel general. */
+  checkMasterPassword(password: string | undefined): boolean {
+    if (!this.masterPassword || !password) return false;
+    return secretsMatch(password, this.masterPassword);
+  }
+
+  /** Exige la contraseña del panel general. */
+  requireMasterAdmin(password: string | undefined): void {
+    if (!this.masterPassword) {
+      throw new ServiceError(501, 'El panel general no está habilitado en este despliegue');
+    }
+    if (!this.checkMasterPassword(password)) {
+      throw new ServiceError(403, 'Contraseña incorrecta');
+    }
+  }
+
+  /** Todas las salas con sus números, para el panel general. */
+  async listRooms(): Promise<
+    Array<{
+      code: string;
+      title: string;
+      closed: boolean;
+      createdAt: number;
+      adminKey: string;
+      questionCount: number;
+      pendingCount: number;
+    }>
+  > {
+    const rooms = await this.repository.listRooms();
+    return Promise.all(
+      rooms.map(async (room) => {
+        const stats = await this.getStats(room);
+        return {
+          code: room.code,
+          title: room.title,
+          closed: room.closed,
+          createdAt: room.createdAt,
+          adminKey: room.adminKey,
+          questionCount: stats.questionCount,
+          pendingCount: stats.pendingCount,
+        };
+      }),
+    );
+  }
 
   // ---------------------------------------------------------------- salas
 
@@ -49,10 +118,21 @@ export class Service {
     return room;
   }
 
-  /** Valida la clave de administrador de una sala y devuelve la sala. */
-  async requireAdmin(code: string, adminKey: string | undefined): Promise<Room> {
+  /**
+   * Valida el acceso al panel de una sala y la devuelve.
+   *
+   * Se entra de dos formas: con la clave propia de la sala (la que se guarda al
+   * crearla y se puede compartir con un ayudante) o con la contraseña del panel
+   * general, que abre todas.
+   */
+  async requireAdmin(
+    code: string,
+    adminKey: string | undefined,
+    masterPassword?: string,
+  ): Promise<Room> {
     const room = await this.getRoomByCode(code);
-    if (!adminKey || adminKey !== room.adminKey) {
+    if (this.checkMasterPassword(masterPassword)) return room;
+    if (!adminKey || !secretsMatch(adminKey, room.adminKey)) {
       throw new ServiceError(403, 'Clave de administrador inválida');
     }
     return room;

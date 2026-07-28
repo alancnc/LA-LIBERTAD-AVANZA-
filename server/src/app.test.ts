@@ -45,7 +45,7 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
 
   beforeEach(async () => {
     repository = create();
-    const built = createApp({ repository, clientDir: null });
+    const built = createApp({ repository, clientDir: null, adminPassword: 'clave-docente' });
     app = built.app;
     await repository.init();
     await reset();
@@ -245,6 +245,62 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     });
   });
 
+  describe('área del docente', () => {
+    it('valida la contraseña maestra', async () => {
+      const ok = await request(app).post('/api/admin/session').send({ password: 'clave-docente' });
+      expect(ok.status).toBe(200);
+
+      const mal = await request(app).post('/api/admin/session').send({ password: 'otra' });
+      expect(mal.status).toBe(403);
+
+      const vacia = await request(app).post('/api/admin/session').send({});
+      expect(vacia.status).toBe(403);
+    });
+
+    it('no lista las clases sin la contraseña', async () => {
+      await createRoom();
+      const sinClave = await request(app).get('/api/admin/rooms');
+      expect(sinClave.status).toBe(403);
+    });
+
+    it('lista las clases con sus números', async () => {
+      const room = await createRoom('Álgebra I');
+      await ask(room.code, '¿Cuándo es el parcial?', 'v1');
+      await ask(room.code, 'qué día es el parcial', 'v2');
+
+      const response = await request(app)
+        .get('/api/admin/rooms')
+        .set('x-admin-password', 'clave-docente');
+
+      expect(response.status).toBe(200);
+      const encontrada = response.body.rooms.find((item: { code: string }) => item.code === room.code);
+      expect(encontrada.title).toBe('Álgebra I');
+      expect(encontrada.questionCount).toBe(2);
+      expect(encontrada.pendingCount).toBe(1);
+    });
+
+    it('la contraseña maestra abre el panel de cualquier clase', async () => {
+      const room = await createRoom();
+      const response = await request(app)
+        .get(`/api/rooms/${room.code}/admin`)
+        .set('x-admin-password', 'clave-docente');
+      expect(response.status).toBe(200);
+    });
+
+    it('una contraseña incorrecta no abre nada', async () => {
+      const room = await createRoom();
+      const response = await request(app)
+        .get(`/api/rooms/${room.code}/admin`)
+        .set('x-admin-password', 'incorrecta');
+      expect(response.status).toBe(403);
+    });
+
+    it('informa que el área del docente está habilitada', async () => {
+      const response = await request(app).get('/api/config');
+      expect(response.body.masterAdmin).toBe(true);
+    });
+  });
+
   describe('panel del docente', () => {
     it('exige la clave de admin', async () => {
       const room = await createRoom();
@@ -371,5 +427,49 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       const repregunta = await ask(room.code, 'integrales por partes cómo se resuelven', 'v2');
       expect(repregunta.body.isNewCluster).toBe(true);
     });
+  });
+});
+
+describe('sin contraseña de docente configurada', () => {
+  const sinPassword = createApp({ dataFile: null, clientDir: null }).app;
+
+  it('el área general queda deshabilitada', async () => {
+    const response = await request(sinPassword)
+      .post('/api/admin/session')
+      .send({ password: 'lo-que-sea' });
+    expect(response.status).toBe(501);
+  });
+
+  it('lo informa en la configuración, para no ofrecer lo que no existe', async () => {
+    const response = await request(sinPassword).get('/api/config');
+    expect(response.body.masterAdmin).toBe(false);
+  });
+
+  it('cada clase se sigue administrando con su clave propia', async () => {
+    const room = await request(sinPassword).post('/api/rooms').send({ title: 'x' });
+    const response = await request(sinPassword)
+      .get(`/api/rooms/${room.body.code}/admin`)
+      .set('x-admin-key', room.body.adminKey);
+    expect(response.status).toBe(200);
+  });
+});
+
+describe('sin base de datos en un despliegue que la exige', () => {
+  const sinBase = createApp({
+    dataFile: null,
+    clientDir: null,
+    requirePersistence: true,
+  }).app;
+
+  it('rechaza crear salas con un error explicable', async () => {
+    const response = await request(sinBase).post('/api/rooms').send({ title: 'x' });
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatch(/base de datos/i);
+  });
+
+  it('deja pasar health y config, que son las que sirven para diagnosticar', async () => {
+    expect((await request(sinBase).get('/api/health')).status).toBe(200);
+    expect((await request(sinBase).get('/api/config')).status).toBe(200);
+    expect((await request(sinBase).get('/api/health')).body.ok).toBe(false);
   });
 });

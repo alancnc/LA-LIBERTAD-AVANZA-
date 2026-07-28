@@ -41,6 +41,8 @@ export interface Repository {
 
   createRoom(room: Room): Promise<Room>;
   getRoomByCode(code: string): Promise<Room | null>;
+  /** Todas las salas, de la más reciente a la más vieja. Para el panel maestro. */
+  listRooms(): Promise<Room[]>;
   isRoomCodeTaken(code: string): Promise<boolean>;
   updateRoom(
     roomId: string,

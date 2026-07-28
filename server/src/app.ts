@@ -36,6 +36,15 @@ export interface AppOptions {
   /** Carpeta con el build del cliente, si se quiere servir desde el mismo proceso. */
   clientDir?: string | null;
   realtime?: RealtimeMode;
+  /** Contraseña del panel general del docente. Sin ella ese panel no existe. */
+  adminPassword?: string | null;
+  /**
+   * Si es true y no hay base de datos configurada, la API responde 503 en lugar
+   * de trabajar en memoria. En serverless esto es imprescindible: sin base, cada
+   * invocación arranca vacía, así que crear una sala "funciona" pero la sala
+   * desaparece de inmediato. Es preferible un error claro a ese comportamiento.
+   */
+  requirePersistence?: boolean;
 }
 
 /**
@@ -66,7 +75,9 @@ export function createApp(options: AppOptions = {}) {
       : new JsonRepository(options.dataFile ?? null));
 
   const realtime: RealtimeMode = options.realtime ?? (options.databaseUrl ? 'poll' : 'sse');
-  const service = new Service(repository);
+  const adminPassword = options.adminPassword?.trim() || null;
+  const service = new Service(repository, adminPassword);
+  const persistenceMissing = Boolean(options.requirePersistence) && !options.databaseUrl;
 
   // El esquema/archivo se prepara una sola vez y todas las peticiones esperan
   // esa misma promesa: en serverless cada instancia arranca en frío.
@@ -81,6 +92,24 @@ export function createApp(options: AppOptions = {}) {
 
   const api = express.Router();
 
+  // Sin almacenamiento persistente no se atiende nada: es preferible un error
+  // explicable a que las preguntas se pierdan en medio de una clase.
+  if (persistenceMissing) {
+    api.use((req, res, next) => {
+      // /health y /config siguen respondiendo: son justamente las que sirven
+      // para diagnosticar por qué el resto no anda.
+      if (req.path === '/health' || req.path === '/config') {
+        next();
+        return;
+      }
+      res.status(503).json({
+        error:
+          'Falta configurar la base de datos. Sin ella las salas se pierden entre ' +
+          'una petición y la siguiente. Configurá DATABASE_URL y volvé a desplegar.',
+      });
+    });
+  }
+
   /** Identidad anónima del visitante: la genera el cliente y viaja en cada request. */
   function viewerId(req: Request): string {
     const fromHeader = req.header('x-viewer-id');
@@ -94,6 +123,16 @@ export function createApp(options: AppOptions = {}) {
     return typeof req.query.adminKey === 'string' ? req.query.adminKey : undefined;
   }
 
+  /** Contraseña del panel general, que abre cualquier sala. */
+  function adminPasswordOf(req: Request): string | undefined {
+    return req.header('x-admin-password') ?? undefined;
+  }
+
+  /** Acceso al panel de una sala: con su clave propia o con la contraseña general. */
+  function roomAdmin(req: Request) {
+    return service.requireAdmin(param(req, 'code'), adminKey(req), adminPasswordOf(req));
+  }
+
   /** Sólo tiene efecto cuando hay un proceso persistente detrás. */
   function notify(roomId: string, event: string): void {
     if (realtime === 'sse') publish(roomId, event);
@@ -104,7 +143,26 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     '/config',
     route(async (_req, res) => {
-      res.json({ realtime });
+      res.json({ realtime, masterAdmin: service.masterAdminEnabled });
+    }),
+  );
+
+  /** Valida la contraseña del panel general. */
+  api.post(
+    '/admin/session',
+    route(async (req, res) => {
+      const password = typeof req.body?.password === 'string' ? req.body.password : undefined;
+      service.requireMasterAdmin(password);
+      res.json({ ok: true });
+    }),
+  );
+
+  /** Todas las salas del docente, con sus números. */
+  api.get(
+    '/admin/rooms',
+    route(async (req, res) => {
+      service.requireMasterAdmin(adminPasswordOf(req));
+      res.json({ rooms: await service.listRooms() });
     }),
   );
 
@@ -139,7 +197,7 @@ export function createApp(options: AppOptions = {}) {
   api.patch(
     '/rooms/:code',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
       const updated = await service.updateRoom(room, {
         title: typeof req.body?.title === 'string' ? req.body.title : undefined,
         closed: typeof req.body?.closed === 'boolean' ? req.body.closed : undefined,
@@ -171,7 +229,7 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     '/rooms/:code/admin',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
       res.json({
         room: {
           code: room.code,
@@ -253,7 +311,7 @@ export function createApp(options: AppOptions = {}) {
   api.post(
     '/rooms/:code/questions/:questionId/hide',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
       await service.hideQuestion(room, param(req, 'questionId'));
       notify(room.id, 'question');
       res.json({ ok: true });
@@ -263,7 +321,7 @@ export function createApp(options: AppOptions = {}) {
   api.post(
     '/rooms/:code/questions/:questionId/split',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
       const cluster = await service.splitQuestion(room, param(req, 'questionId'));
       notify(room.id, 'cluster');
       res.json({ clusterId: cluster.id });
@@ -275,7 +333,7 @@ export function createApp(options: AppOptions = {}) {
   api.patch(
     '/rooms/:code/clusters/:clusterId',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
 
       const rawStatus = req.body?.status;
       if (rawStatus !== undefined && !VALID_STATUSES.includes(rawStatus as ClusterStatus)) {
@@ -300,7 +358,7 @@ export function createApp(options: AppOptions = {}) {
   api.post(
     '/rooms/:code/clusters/:clusterId/merge',
     route(async (req, res) => {
-      const room = await service.requireAdmin(param(req, 'code'), adminKey(req));
+      const room = await roomAdmin(req);
       const targetId = typeof req.body?.targetId === 'string' ? req.body.targetId : '';
       if (!targetId) throw new ServiceError(400, 'Falta el grupo destino');
 
@@ -311,7 +369,12 @@ export function createApp(options: AppOptions = {}) {
   );
 
   api.get('/health', (_req, res) => {
-    res.json({ ok: true, realtime });
+    res.json({
+      ok: !persistenceMissing,
+      realtime,
+      database: options.databaseUrl ? 'postgres' : 'archivo',
+      masterAdmin: service.masterAdminEnabled,
+    });
   });
 
   app.use('/api', api);

@@ -4,6 +4,7 @@ import {
   api,
   clearAdminKey,
   loadAdminKey,
+  loadAdminPassword,
   saveAdminKey,
   type AdminResponse,
   type ClusterStatus,
@@ -29,6 +30,9 @@ export function AdminPage() {
     return loadAdminKey(code);
   });
 
+  // Con la contraseña del área del docente no hace falta la clave de la sala:
+  // esa clave existe para compartir una clase puntual con otra persona.
+  const conContrasena = loadAdminPassword() !== null;
   const [keyInput, setKeyInput] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -36,10 +40,10 @@ export function AdminPage() {
   const [filter, setFilter] = useState<Filter>('activas');
   const [copied, setCopied] = useState(false);
 
-  const fetcher = useCallback(() => {
-    if (!adminKey) return Promise.reject(new Error('Falta la clave de administrador'));
-    return api.getAdminBoard(code, adminKey);
-  }, [code, adminKey]);
+  const fetcher = useCallback(
+    () => api.getAdminBoard(code, adminKey ?? ''),
+    [code, adminKey],
+  );
 
   const { data, error, loading, connected, refresh } = useLive<AdminResponse>(code, fetcher, [
     adminKey,
@@ -58,10 +62,9 @@ export function AdminPage() {
 
   /** Ejecuta una acción de admin y refresca el tablero. */
   async function run(action: (key: string) => Promise<unknown>) {
-    if (!adminKey) return;
     setActionError(null);
     try {
-      await action(adminKey);
+      await action(adminKey ?? '');
       refresh();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'No se pudo completar la acción');
@@ -102,7 +105,7 @@ export function AdminPage() {
     }
   }
 
-  if (!adminKey) {
+  if (!adminKey && !conContrasena) {
     return (
       <div className="page">
         <header className="header">
@@ -113,7 +116,8 @@ export function AdminPage() {
         </header>
         <div className="card">
           <p className="muted">
-            Este navegador no tiene la clave de la sala. Pegala para entrar al panel.
+            Este navegador no tiene la clave de esta clase. Pegala para entrar, o entrá al{' '}
+            <Link to="/admin">área del docente</Link> con tu contraseña.
           </p>
           <form onSubmit={handleKeySubmit} className="stack">
             <input
@@ -184,6 +188,11 @@ export function AdminPage() {
             <Link to={`/r/${code}`} className="btn btn--small btn--ghost">
               Ver como alumno
             </Link>
+            {conContrasena && (
+              <Link to="/admin" className="btn btn--small btn--ghost">
+                Mis clases
+              </Link>
+            )}
           </div>
         </div>
       </header>

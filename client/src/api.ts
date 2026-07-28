@@ -48,6 +48,17 @@ export interface AdminResponse extends BoardResponse {
   stats: RoomStats;
 }
 
+/** Una sala en el listado del panel general del docente. */
+export interface RoomSummary {
+  code: string;
+  title: string;
+  closed: boolean;
+  createdAt: number;
+  adminKey: string;
+  questionCount: number;
+  pendingCount: number;
+}
+
 export interface AskResponse {
   questionId: string;
   clusterId: string;
@@ -65,6 +76,20 @@ export class ApiError extends Error {
 }
 
 const VIEWER_STORAGE_KEY = 'preguntas-en-vivo:viewer-id';
+const ADMIN_PASSWORD_KEY = 'preguntas-en-vivo:admin-password';
+
+/** Contraseña del panel general, guardada en este navegador. */
+export function loadAdminPassword(): string | null {
+  return localStorage.getItem(ADMIN_PASSWORD_KEY);
+}
+
+export function saveAdminPassword(password: string): void {
+  localStorage.setItem(ADMIN_PASSWORD_KEY, password);
+}
+
+export function clearAdminPassword(): void {
+  localStorage.removeItem(ADMIN_PASSWORD_KEY);
+}
 
 /**
  * Identidad anónima del navegador. No hay login: alcanza con un id estable
@@ -104,6 +129,10 @@ async function call<T>(
   const headers: Record<string, string> = { 'x-viewer-id': getViewerId() };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (options.adminKey) headers['x-admin-key'] = options.adminKey;
+  // La contraseña del panel general abre cualquier sala, así que viaja siempre
+  // que esté guardada: evita tener que recordar la clave de cada sala.
+  const password = loadAdminPassword();
+  if (password) headers['x-admin-password'] = password;
 
   const response = await fetch(`/api${path}`, {
     method,
@@ -120,6 +149,12 @@ async function call<T>(
 }
 
 export const api = {
+  /** Valida la contraseña del panel general contra el servidor. */
+  login: (password: string) =>
+    call<{ ok: true }>('POST', '/admin/session', { body: { password } }),
+
+  listRooms: () => call<{ rooms: RoomSummary[] }>('GET', '/admin/rooms'),
+
   createRoom: (title: string) =>
     call<{ code: string; title: string; adminKey: string }>('POST', '/rooms', { body: { title } }),
 
@@ -186,6 +221,14 @@ export function getRealtimeMode(): Promise<RealtimeMode> {
     // Ante la duda, sondear: funciona en todos lados.
     .catch(() => 'poll' as const);
   return realtimeMode;
+}
+
+/** Qué ofrece este despliegue: sirve para no mostrar lo que no está habilitado. */
+export function getConfig(): Promise<{ realtime: RealtimeMode; masterAdmin: boolean }> {
+  return call<{ realtime: RealtimeMode; masterAdmin: boolean }>('GET', '/config').catch(() => ({
+    realtime: 'poll' as const,
+    masterAdmin: false,
+  }));
 }
 
 /**

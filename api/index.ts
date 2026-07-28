@@ -32,6 +32,10 @@ const { app } = createApp({
   clientDir: null,
   // Sin proceso persistente no hay SSE posible: el cliente sondea.
   realtime: 'poll',
+  adminPassword: process.env.ADMIN_PASSWORD ?? null,
+  // Sin base de datos la API responde 503 con una explicación, en lugar de
+  // aceptar preguntas que se van a perder en la invocación siguiente.
+  requirePersistence: true,
 });
 
 export default app;

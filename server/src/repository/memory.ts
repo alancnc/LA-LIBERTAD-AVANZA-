@@ -74,6 +74,10 @@ export class JsonRepository implements Repository {
     return this.data.rooms.find((room) => room.code === code) ?? null;
   }
 
+  async listRooms(): Promise<Room[]> {
+    return [...this.data.rooms].sort((a, b) => b.createdAt - a.createdAt);
+  }
+
   async isRoomCodeTaken(code: string): Promise<boolean> {
     return this.data.rooms.some((room) => room.code === code);
   }
