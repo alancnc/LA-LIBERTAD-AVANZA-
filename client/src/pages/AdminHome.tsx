@@ -21,13 +21,21 @@ export function AdminHome() {
   const [password, setPassword] = useState('');
   const [autenticado, setAutenticado] = useState(() => loadAdminPassword() !== null);
   const [habilitado, setHabilitado] = useState<boolean | null>(null);
+  const [errorConfig, setErrorConfig] = useState<string | null>(null);
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [creando, setCreando] = useState(false);
 
   useEffect(() => {
-    void getConfig().then((config) => setHabilitado(config.masterAdmin));
+    void getConfig().then(
+      (config) => setHabilitado(config.masterAdmin),
+      (cause: unknown) => {
+        // No se puede concluir nada sobre la contraseña si no se pudo consultar
+        // la configuración: se muestra el error real.
+        setErrorConfig(cause instanceof Error ? cause.message : 'No se pudo contactar al servidor');
+      },
+    );
   }, []);
 
   const cargar = useCallback(async () => {
@@ -82,6 +90,28 @@ export function AdminHome() {
     clearAdminPassword();
     setAutenticado(false);
     setRooms(null);
+  }
+
+  if (errorConfig !== null) {
+    return (
+      <div className="page">
+        <header className="header">
+          <div>
+            <h1>Área del docente</h1>
+          </div>
+        </header>
+        <div className="card">
+          <div className="error">No se pudo contactar al servidor: {errorConfig}</div>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Revisá <code>/api/health</code> en este mismo dominio: ahí figura si la base de datos
+            conectó y, si no, cuál fue el error exacto.
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            <Link to="/">Volver al inicio</Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (habilitado === false) {

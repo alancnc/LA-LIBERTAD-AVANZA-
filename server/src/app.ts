@@ -81,12 +81,30 @@ export function createApp(options: AppOptions = {}) {
 
   // El esquema/archivo se prepara una sola vez y todas las peticiones esperan
   // esa misma promesa: en serverless cada instancia arranca en frío.
-  const ready = repository.init();
+  let storageError: Error | null = null;
+  const ready = repository.init().catch((cause: unknown) => {
+    storageError = cause instanceof Error ? cause : new Error(String(cause));
+    console.error('No se pudo inicializar el almacenamiento:', cause);
+    throw storageError;
+  });
+  // Sin esto Node reporta un rechazo no manejado antes de que llegue la primera
+  // petición, y en serverless eso puede tumbar la instancia entera.
+  ready.catch(() => undefined);
+
+  /** Rutas que tienen que contestar aunque el almacenamiento esté caído. */
+  const DIAGNOSTIC_PATHS = ['/api/health', '/api/config'];
 
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '64kb' }));
-  app.use((_req, _res, next) => {
+  app.use((req, res, next) => {
+    // Si la base no conecta, estas dos son las únicas que pueden explicar por
+    // qué falla todo lo demás: dejarlas caer con el resto convierte un problema
+    // de conexión en un misterio.
+    if (DIAGNOSTIC_PATHS.includes(req.path)) {
+      next();
+      return;
+    }
     ready.then(() => next()).catch(next);
   });
 
@@ -369,11 +387,16 @@ export function createApp(options: AppOptions = {}) {
   );
 
   api.get('/health', (_req, res) => {
+    const almacenamiento: Error | null = storageError;
     res.json({
-      ok: !persistenceMissing,
+      ok: !persistenceMissing && almacenamiento === null,
       realtime,
       database: options.databaseUrl ? 'postgres' : 'archivo',
       masterAdmin: service.masterAdminEnabled,
+      // Se informa el motivo exacto: sin esto, un fallo de conexión se
+      // manifiesta como errores sueltos en pantallas que no tienen que ver.
+      storage: almacenamiento === null ? 'ok' : 'error',
+      storageError: almacenamiento === null ? undefined : almacenamiento.message,
     });
   });
 

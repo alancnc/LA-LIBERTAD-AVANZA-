@@ -473,3 +473,44 @@ describe('sin base de datos en un despliegue que la exige', () => {
     expect((await request(sinBase).get('/api/health')).body.ok).toBe(false);
   });
 });
+
+describe('diagnóstico cuando el almacenamiento falla', () => {
+  /** Repositorio que no logra inicializarse, como una base inalcanzable. */
+  function repositorioRoto(): Repository {
+    return new Proxy({} as Repository, {
+      get(_target, prop) {
+        if (prop === 'init') {
+          return () => Promise.reject(new Error('ECONNREFUSED: la base no responde'));
+        }
+        return () => Promise.reject(new Error('sin almacenamiento'));
+      },
+    });
+  }
+
+  const app = createApp({
+    repository: repositorioRoto(),
+    clientDir: null,
+    adminPassword: 'clave-docente',
+  });
+
+  it('health responde igual y explica el motivo', async () => {
+    const response = await request(app.app).get('/api/health');
+    expect(response.status).toBe(200);
+    expect(response.body.storage).toBe('error');
+    expect(response.body.storageError).toMatch(/ECONNREFUSED/);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('config responde igual, para no confundir un fallo de base con otra cosa', async () => {
+    // Si esta ruta cayera con el resto, la pantalla del docente mostraría
+    // "falta la contraseña" cuando el problema real es la conexión.
+    const response = await request(app.app).get('/api/config');
+    expect(response.status).toBe(200);
+    expect(response.body.masterAdmin).toBe(true);
+  });
+
+  it('el resto de la API sí falla', async () => {
+    const response = await request(app.app).post('/api/rooms').send({ title: 'x' });
+    expect(response.status).toBe(500);
+  });
+});

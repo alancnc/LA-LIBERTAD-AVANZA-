@@ -223,12 +223,16 @@ export function getRealtimeMode(): Promise<RealtimeMode> {
   return realtimeMode;
 }
 
-/** Qué ofrece este despliegue: sirve para no mostrar lo que no está habilitado. */
+/**
+ * Qué ofrece este despliegue: sirve para no mostrar lo que no está habilitado.
+ *
+ * Propaga el error a propósito. Antes lo tragaba y devolvía `masterAdmin:false`,
+ * con lo cual un problema de conexión con la base se mostraba en pantalla como
+ * "falta configurar la contraseña": un mensaje que apunta al lugar equivocado y
+ * manda a buscar el problema donde no está.
+ */
 export function getConfig(): Promise<{ realtime: RealtimeMode; masterAdmin: boolean }> {
-  return call<{ realtime: RealtimeMode; masterAdmin: boolean }>('GET', '/config').catch(() => ({
-    realtime: 'poll' as const,
-    masterAdmin: false,
-  }));
+  return call<{ realtime: RealtimeMode; masterAdmin: boolean }>('GET', '/config');
 }
 
 /**
