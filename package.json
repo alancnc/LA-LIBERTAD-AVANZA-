@@ -2,6 +2,7 @@
   "name": "preguntas-en-vivo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Plataforma de preguntas en vivo: los alumnos preguntan, el sistema agrupa las preguntas parecidas y arma un ranking para el docente.",
   "workspaces": [
     "server",
