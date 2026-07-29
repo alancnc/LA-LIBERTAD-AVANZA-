@@ -67,6 +67,22 @@ function param(req: Request, name: string): string {
   return value;
 }
 
+/**
+ * Host de la cadena de conexión, sin usuario ni contraseña.
+ *
+ * Se publica en el diagnóstico para poder confirmar contra qué base se está
+ * hablando y si pasa por un pooler, que es lo que corresponde en serverless.
+ */
+export function describeHost(connectionString: string | null): string | null {
+  if (!connectionString) return null;
+  try {
+    const url = new URL(connectionString);
+    return url.port ? `${url.hostname}:${url.port}` : url.hostname;
+  } catch {
+    return 'cadena de conexión ilegible';
+  }
+}
+
 export function createApp(options: AppOptions = {}) {
   const repository =
     options.repository ??
@@ -79,17 +95,27 @@ export function createApp(options: AppOptions = {}) {
   const service = new Service(repository, adminPassword);
   const persistenceMissing = Boolean(options.requirePersistence) && !options.databaseUrl;
 
-  // El esquema/archivo se prepara una sola vez y todas las peticiones esperan
-  // esa misma promesa: en serverless cada instancia arranca en frío.
+  // El almacenamiento se prepara en la primera petición y el repositorio cachea
+  // el resultado. Se lo llama en cada una a propósito, en lugar de guardar una
+  // única promesa al construir la app: si el primer intento falla (una base
+  // suspendida que tarda en despertar), esa promesa quedaría rechazada para
+  // siempre y la instancia no se recuperaría nunca.
   let storageError: Error | null = null;
-  const ready = repository.init().catch((cause: unknown) => {
-    storageError = cause instanceof Error ? cause : new Error(String(cause));
-    console.error('No se pudo inicializar el almacenamiento:', cause);
-    throw storageError;
-  });
-  // Sin esto Node reporta un rechazo no manejado antes de que llegue la primera
-  // petición, y en serverless eso puede tumbar la instancia entera.
-  ready.catch(() => undefined);
+  function prepareStorage(): Promise<void> {
+    return repository.init().then(
+      () => {
+        storageError = null;
+      },
+      (cause: unknown) => {
+        storageError = cause instanceof Error ? cause : new Error(String(cause));
+        console.error('No se pudo inicializar el almacenamiento:', cause);
+        throw storageError;
+      },
+    );
+  }
+  // Se dispara al arrancar para que la instancia llegue caliente, sin que nadie
+  // dependa de este intento en particular.
+  prepareStorage().catch(() => undefined);
 
   /** Rutas que tienen que contestar aunque el almacenamiento esté caído. */
   const DIAGNOSTIC_PATHS = ['/api/health', '/api/config'];
@@ -105,7 +131,7 @@ export function createApp(options: AppOptions = {}) {
       next();
       return;
     }
-    ready.then(() => next()).catch(next);
+    prepareStorage().then(() => next()).catch(next);
   });
 
   const api = express.Router();
@@ -386,19 +412,28 @@ export function createApp(options: AppOptions = {}) {
     }),
   );
 
-  api.get('/health', (_req, res) => {
-    const almacenamiento: Error | null = storageError;
-    res.json({
-      ok: !persistenceMissing && almacenamiento === null,
-      realtime,
-      database: options.databaseUrl ? 'postgres' : 'archivo',
-      masterAdmin: service.masterAdminEnabled,
-      // Se informa el motivo exacto: sin esto, un fallo de conexión se
-      // manifiesta como errores sueltos en pantallas que no tienen que ver.
-      storage: almacenamiento === null ? 'ok' : 'error',
-      storageError: almacenamiento === null ? undefined : almacenamiento.message,
-    });
-  });
+  api.get(
+    '/health',
+    route(async (_req, res) => {
+      // Se reintenta acá mismo: si la base estaba suspendida, consultar el
+      // estado es también la forma de despertarla.
+      await prepareStorage().catch(() => undefined);
+      const almacenamiento: Error | null = storageError;
+      res.json({
+        ok: !persistenceMissing && almacenamiento === null,
+        realtime,
+        database: options.databaseUrl ? 'postgres' : 'archivo',
+        // Host sin credenciales, para poder ver si la conexión pasa por el
+        // pooler sin exponer la contraseña de la base.
+        databaseHost: describeHost(options.databaseUrl ?? null),
+        masterAdmin: service.masterAdminEnabled,
+        // Se informa el motivo exacto: sin esto, un fallo de conexión se
+        // manifiesta como errores sueltos en pantallas que no tienen que ver.
+        storage: almacenamiento === null ? 'ok' : 'error',
+        storageError: almacenamiento === null ? undefined : almacenamiento.message,
+      });
+    }),
+  );
 
   app.use('/api', api);
 

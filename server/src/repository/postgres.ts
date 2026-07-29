@@ -186,6 +186,16 @@ export function sslConfigFor(
   return { rejectUnauthorized: false };
 }
 
+/** Distingue un problema de conexión de un error de SQL, que no se reintenta. */
+function isConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code && ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET', 'EPIPE'].includes(code)) {
+    return true;
+  }
+  return /timeout|terminated|connection|getaddrinfo|socket/i.test(error.message);
+}
+
 export class PostgresRepository implements Repository {
   private readonly pool: pg.Pool;
   private ready: Promise<void> | null = null;
@@ -197,7 +207,10 @@ export class PostgresRepository implements Repository {
       // instancia y cierre rápido de las ociosas para no agotar el servidor.
       max: 3,
       idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 10_000,
+      // Los planes gratuitos suspenden la base por inactividad y la primera
+      // conexión tiene que esperar a que despierte. Diez segundos se quedaban
+      // cortos con Neon.
+      connectionTimeoutMillis: 20_000,
       ssl: sslConfigFor(connectionString, caCertificate),
     });
 
@@ -214,10 +227,45 @@ export class PostgresRepository implements Repository {
     });
   }
 
-  /** Crea el esquema si falta. Idempotente y cacheado por instancia. */
+  /**
+   * Crea el esquema si falta.
+   *
+   * El resultado se cachea sólo si sale bien. Cachear también el fallo dejaba
+   * la instancia inutilizable de forma permanente: bastaba con que la primera
+   * conexión cayera por un timeout de arranque en frío para que todas las
+   * peticiones siguientes fallaran con ese mismo error, aunque la base ya
+   * estuviera despierta.
+   */
   init(): Promise<void> {
-    this.ready ??= this.pool.query(SCHEMA).then(() => undefined);
+    this.ready ??= this.connectWithRetry().catch((error: unknown) => {
+      this.ready = null;
+      throw error;
+    });
     return this.ready;
+  }
+
+  /**
+   * Intenta preparar el esquema, reintentando ante fallos de conexión.
+   *
+   * Una base suspendida rechaza o deja colgada la primera conexión mientras
+   * arranca; el segundo intento suele encontrarla lista. No se reintentan los
+   * errores de SQL: si el esquema está mal, insistir no lo arregla.
+   */
+  private async connectWithRetry(attempts = 3): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.pool.query(SCHEMA);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!isConnectionError(error) || attempt === attempts) throw error;
+        // Espera creciente: 300ms, 900ms. Suficiente para un arranque en frío
+        // sin agotar el tiempo máximo de una función serverless.
+        await new Promise((resolve) => setTimeout(resolve, 300 * 3 ** (attempt - 1)));
+      }
+    }
+    throw lastError;
   }
 
   async createRoom(room: Room): Promise<Room> {

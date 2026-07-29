@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import pg from 'pg';
-import { createApp } from './app.js';
+import { createApp, describeHost } from './app.js';
 import { JsonRepository } from './repository/memory.js';
 import { PostgresRepository } from './repository/postgres.js';
 import type { Repository } from './repository/types.js';
@@ -514,3 +514,81 @@ describe('diagnóstico cuando el almacenamiento falla', () => {
     expect(response.status).toBe(500);
   });
 });
+
+describe('describeHost', () => {
+  it('devuelve el host sin usuario ni contraseña', () => {
+    expect(describeHost('postgresql://usuario:secreta@ep-x-pooler.neon.tech/db')).toBe(
+      'ep-x-pooler.neon.tech',
+    );
+  });
+
+  it('incluye el puerto cuando está declarado', () => {
+    expect(describeHost('postgresql://u:p@host.supabase.com:6543/postgres')).toBe(
+      'host.supabase.com:6543',
+    );
+  });
+
+  it('nunca filtra la contraseña', () => {
+    expect(describeHost('postgresql://u:secretisima@host/db')).not.toContain('secretisima');
+  });
+
+  it('no rompe con una cadena ilegible', () => {
+    expect(describeHost('no-es-una-url')).toBe('cadena de conexión ilegible');
+  });
+});
+
+describe('recuperación tras un fallo de almacenamiento', () => {
+  /** Falla las primeras `fallos` inicializaciones y después funciona. */
+  function repositorioIntermitente(fallos: number) {
+    const real = new JsonRepository(null);
+    let intentos = 0;
+    return new Proxy(real, {
+      get(target, prop, receiver) {
+        if (prop === 'init') {
+          return () => {
+            intentos += 1;
+            if (intentos <= fallos) {
+              return Promise.reject(new Error('Connection terminated due to connection timeout'));
+            }
+            return real.init();
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as Repository;
+  }
+
+  it('vuelve a intentar en la petición siguiente en vez de quedar rota', async () => {
+    // Dos fallos: uno se lo lleva el precalentado que hace createApp al
+    // construirse y el otro la primera petición. Si el fallo quedara cacheado,
+    // la instancia no se recuperaría nunca y la segunda también fallaría.
+    const { app } = createApp({
+      repository: repositorioIntermitente(2),
+      clientDir: null,
+      adminPassword: 'clave',
+    });
+
+    const primera = await request(app).post('/api/rooms').send({ title: 'x' });
+    expect(primera.status).toBe(500);
+
+    const segunda = await request(app).post('/api/rooms').send({ title: 'x' });
+    expect(segunda.status).toBe(201);
+  });
+
+  it('health refleja la recuperación', async () => {
+    const { app } = createApp({
+      repository: repositorioIntermitente(2),
+      clientDir: null,
+    });
+
+    const roto = await request(app).get('/api/health');
+    expect(roto.body.storage).toBe('error');
+    expect(roto.body.storageError).toMatch(/timeout/i);
+
+    // Consultar el estado también reintenta: sirve para despertar la base.
+    const sano = await request(app).get('/api/health');
+    expect(sano.body.storage).toBe('ok');
+    expect(sano.body.ok).toBe(true);
+  });
+})
+;
