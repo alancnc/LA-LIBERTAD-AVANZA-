@@ -174,6 +174,29 @@ local y funciona sin conexión.
 Un tema ya respondido no absorbe preguntas nuevas a propósito: si alguien vuelve
 a preguntar lo mismo, el docente necesita verlo otra vez.
 
+### Comparar significado, no sólo palabras
+
+Lo anterior compara **palabras**, y eso tiene un techo: "¿se viene la lluvia?" y
+"¿está por llover?" son la misma pregunta y no comparten ninguna, así que la
+similitud da 0.009 y quedan separadas. Ningún ajuste del umbral lo arregla.
+
+Configurando `EMBEDDINGS_API_KEY` se suma una segunda señal: cada pregunta se
+convierte en un vector donde la cercanía es cercanía de sentido, y esos casos sí
+se agrupan. Las dos señales conviven y alcanza con que una se convenza, cada una
+con su propio umbral:
+
+| Señal | Une | No puede unir |
+|---|---|---|
+| Léxica | *parcial* / *parsial* / *el parcial* | *lluvia* / *llover* |
+| Semántica | *lluvia* / *llover*, *parcial* / *examen* | — |
+
+Es opcional y falla con elegancia: si el proveedor no responde, la pregunta
+entra igual y se agrupa sólo por palabras. Sirve cualquier endpoint compatible
+con la API de OpenAI (ver `.env.example`). El costo es despreciable: una
+pregunta son unas 20 palabras.
+
+`/api/config` y `/api/health` informan en `semantic` si está activa.
+
 ### El umbral
 
 `0.42` por defecto, ajustable desde el panel. La elección está medida contra un
@@ -263,12 +286,12 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 84 tests: motor de agrupamiento, calidad, API y acceso
+npm test         # 115 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia y de seguridad de la base (114 en total):
+se suman los tests de concurrencia y de seguridad de la base (145 en total):
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
+import { DEFAULT_SEMANTIC_THRESHOLD, type Embedder } from './text/embeddings.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
 import type { Repository } from './repository/types.js';
 import type {
@@ -42,7 +43,31 @@ export class Service {
   constructor(
     private readonly repository: Repository,
     private readonly masterPassword: string | null = null,
+    /** Comparación por significado. Sin esto sólo se compara por palabras. */
+    private readonly embedder: Embedder | null = null,
+    private readonly semanticThreshold: number = DEFAULT_SEMANTIC_THRESHOLD,
   ) {}
+
+  get semanticEnabled(): boolean {
+    return this.embedder !== null;
+  }
+
+  /**
+   * Vector del texto, o null si no hay comparación semántica configurada.
+   *
+   * Un fallo del proveedor no puede impedir que alguien pregunte: se registra
+   * y la pregunta entra igual, agrupada sólo por palabras.
+   */
+  private async embed(text: string): Promise<number[] | null> {
+    if (!this.embedder) return null;
+    try {
+      const [vector] = await this.embedder.embed([text]);
+      return vector && vector.length > 0 ? vector : null;
+    } catch (error) {
+      console.error('No se pudo calcular el vector de la pregunta:', error);
+      return null;
+    }
+  }
 
   get masterAdminEnabled(): boolean {
     return this.masterPassword !== null;
@@ -185,8 +210,16 @@ export class Service {
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
-    return this.repository.addQuestion({ roomId: room.id, text, author, voterId }, (candidates) =>
-      findBestCluster(text, candidates, room.threshold),
+    const embedding = await this.embed(text);
+
+    return this.repository.addQuestion(
+      { roomId: room.id, text, author, voterId, embedding },
+      (candidates) =>
+        findBestCluster(text, candidates, {
+          threshold: room.threshold,
+          embedding,
+          semanticThreshold: this.semanticThreshold,
+        }),
     );
   }
 

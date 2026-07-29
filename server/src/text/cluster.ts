@@ -1,9 +1,16 @@
 import { buildIdf, buildProfile, similarity, type TextProfile } from './similarity.js';
+import { cosine, DEFAULT_SEMANTIC_THRESHOLD } from './embeddings.js';
 
 export interface ClusterCandidate {
   clusterId: string;
   /** Textos ya asignados a ese grupo. */
   texts: string[];
+  /**
+   * Vectores de esos mismos textos, en el mismo orden. `null` donde no haya
+   * (una pregunta anterior a que se activara la comparación semántica, o una
+   * cuyo cálculo falló).
+   */
+  embeddings?: Array<number[] | null>;
 }
 
 export interface MatchResult {
@@ -11,10 +18,19 @@ export interface MatchResult {
   clusterId: string | null;
   /** Similitud alcanzada contra ese grupo. */
   score: number;
+  /** Qué señal decidió la asignación. */
+  method: 'lexico' | 'semantico' | 'ninguno';
 }
 
 /** Umbral por defecto: calibrado para juntar reformulaciones sin mezclar temas. */
 export const DEFAULT_THRESHOLD = 0.42;
+
+export interface MatchOptions {
+  threshold?: number;
+  /** Vector de la pregunta entrante, si la comparación semántica está activa. */
+  embedding?: number[] | null;
+  semanticThreshold?: number;
+}
 
 /**
  * Similitud entre una pregunta y un grupo, usando enlace promedio.
@@ -36,19 +52,47 @@ export function scoreAgainstCluster(
   return total / members.length;
 }
 
+/** Cercanía de sentido contra un grupo, promediada sobre los miembros con vector. */
+export function semanticScoreAgainstCluster(
+  embedding: number[],
+  members: Array<number[] | null>,
+): number {
+  let total = 0;
+  let contados = 0;
+  for (const member of members) {
+    if (!member || member.length === 0) continue;
+    total += cosine(embedding, member);
+    contados += 1;
+  }
+  return contados === 0 ? 0 : total / contados;
+}
+
 /**
  * Decide a qué grupo pertenece una pregunta nueva.
  *
- * El IDF se recalcula sobre todo el corpus de la sala más la pregunta entrante,
- * de modo que las palabras que ya usó media clase pierden peso automáticamente.
- * La asignación se toma una sola vez, al ingresar: los grupos existentes no se
- * rearman solos, así el docente no ve el ranking reordenarse bajo sus pies.
+ * Hay dos señales independientes y alcanza con que una se convenza:
+ *
+ * - **Léxica**: comparte palabras. Barata, sin dependencias, y muy segura
+ *   cuando la gente reformula usando el mismo vocabulario.
+ * - **Semántica**: los vectores están cerca. Es la única que puede unir
+ *   "¿se viene la lluvia?" con "¿está por llover?", que no comparten ni una
+ *   palabra. Requiere tener configurado un proveedor de embeddings.
+ *
+ * Cada una tiene su propio umbral, así que se comparan normalizadas contra el
+ * suyo para poder elegir el mejor grupo entre las dos escalas.
  */
 export function findBestCluster(
   text: string,
   candidates: ClusterCandidate[],
-  threshold: number = DEFAULT_THRESHOLD,
+  options: MatchOptions | number = {},
 ): MatchResult {
+  // Se acepta un número por compatibilidad: durante mucho tiempo el tercer
+  // argumento fue directamente el umbral léxico.
+  const config: MatchOptions = typeof options === 'number' ? { threshold: options } : options;
+  const threshold = config.threshold ?? DEFAULT_THRESHOLD;
+  const semanticThreshold = config.semanticThreshold ?? DEFAULT_SEMANTIC_THRESHOLD;
+  const embedding = config.embedding ?? null;
+
   const profile = buildProfile(text);
 
   const memberProfiles = new Map<string, TextProfile[]>();
@@ -63,19 +107,35 @@ export function findBestCluster(
 
   let bestId: string | null = null;
   let bestScore = 0;
+  let bestMethod: MatchResult['method'] = 'ninguno';
+  // Confianza relativa a cada umbral: 1 es "justo en el límite".
+  let bestConfidence = 0;
+
   for (const candidate of candidates) {
     const members = memberProfiles.get(candidate.clusterId) ?? [];
-    const score = scoreAgainstCluster(profile, members, idf);
-    if (score > bestScore) {
-      bestScore = score;
+    const lexical = scoreAgainstCluster(profile, members, idf);
+    const semantic =
+      embedding && embedding.length > 0
+        ? semanticScoreAgainstCluster(embedding, candidate.embeddings ?? [])
+        : 0;
+
+    const lexicalConfidence = lexical / threshold;
+    const semanticConfidence = semantic / semanticThreshold;
+    const useSemantic = semanticConfidence > lexicalConfidence;
+    const confidence = useSemantic ? semanticConfidence : lexicalConfidence;
+
+    if (confidence > bestConfidence) {
+      bestConfidence = confidence;
+      bestScore = useSemantic ? semantic : lexical;
+      bestMethod = useSemantic ? 'semantico' : 'lexico';
       bestId = candidate.clusterId;
     }
   }
 
-  if (bestId === null || bestScore < threshold) {
-    return { clusterId: null, score: bestScore };
+  if (bestId === null || bestConfidence < 1) {
+    return { clusterId: null, score: bestScore, method: 'ninguno' };
   }
-  return { clusterId: bestId, score: bestScore };
+  return { clusterId: bestId, score: bestScore, method: bestMethod };
 }
 
 /**

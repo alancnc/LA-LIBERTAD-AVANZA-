@@ -25,6 +25,11 @@ export interface Question {
   upvotes: string[];
   createdAt: number;
   hidden: boolean;
+  /**
+   * Vector del texto, si la comparación semántica está activa. Se guarda para
+   * no recalcularlo cada vez que llega una pregunta nueva.
+   */
+  embedding?: number[] | null;
 }
 
 export interface Cluster {

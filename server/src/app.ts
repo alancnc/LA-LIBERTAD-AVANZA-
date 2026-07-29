@@ -12,6 +12,7 @@ import { Service, ServiceError } from './service.js';
 import { JsonRepository } from './repository/memory.js';
 import { PostgresRepository } from './repository/postgres.js';
 import type { Repository } from './repository/types.js';
+import { createSemanticConfig, type Embedder } from './text/embeddings.js';
 import type { ClusterStatus } from './types.js';
 
 const VALID_STATUSES: ClusterStatus[] = ['pending', 'answering', 'answered', 'discarded'];
@@ -38,6 +39,9 @@ export interface AppOptions {
   realtime?: RealtimeMode;
   /** Contraseña del panel general del docente. Sin ella ese panel no existe. */
   adminPassword?: string | null;
+  /** Comparación por significado. Por defecto se toma del entorno. */
+  embedder?: Embedder | null;
+  semanticThreshold?: number;
   /**
    * Si es true y no hay base de datos configurada, la API responde 503 en lugar
    * de trabajar en memoria. En serverless esto es imprescindible: sin base, cada
@@ -92,7 +96,14 @@ export function createApp(options: AppOptions = {}) {
 
   const realtime: RealtimeMode = options.realtime ?? (options.databaseUrl ? 'poll' : 'sse');
   const adminPassword = options.adminPassword?.trim() || null;
-  const service = new Service(repository, adminPassword);
+  const semantica = createSemanticConfig();
+  const embedder = options.embedder !== undefined ? options.embedder : semantica.embedder;
+  const service = new Service(
+    repository,
+    adminPassword,
+    embedder,
+    options.semanticThreshold ?? semantica.threshold,
+  );
   const persistenceMissing = Boolean(options.requirePersistence) && !options.databaseUrl;
 
   // El almacenamiento se prepara en la primera petición y el repositorio cachea
@@ -187,7 +198,11 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     '/config',
     route(async (_req, res) => {
-      res.json({ realtime, masterAdmin: service.masterAdminEnabled });
+      res.json({
+        realtime,
+        masterAdmin: service.masterAdminEnabled,
+        semantic: service.semanticEnabled,
+      });
     }),
   );
 
@@ -427,6 +442,8 @@ export function createApp(options: AppOptions = {}) {
         // pooler sin exponer la contraseña de la base.
         databaseHost: describeHost(options.databaseUrl ?? null),
         masterAdmin: service.masterAdminEnabled,
+        // Si está en false, la app agrupa sólo por palabras compartidas.
+        semantic: service.semanticEnabled,
         // Se informa el motivo exacto: sin esto, un fallo de conexión se
         // manifiesta como errores sueltos en pantallas que no tienen que ver.
         storage: almacenamiento === null ? 'ok' : 'error',

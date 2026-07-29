@@ -592,3 +592,92 @@ describe('recuperación tras un fallo de almacenamiento', () => {
   });
 })
 ;
+
+describe('agrupamiento por significado a través de la API', () => {
+  /**
+   * Proveedor simulado: las preguntas sobre lluvia apuntan a una dirección y
+   * las del parcial a otra, sin depender de un servicio externo.
+   */
+  const VECTORES: Record<string, number[]> = {
+    '¿se viene la lluvia?': [1, 0, 0],
+    '¿está por llover?': [0.97, 0.24, 0],
+    '¿cuándo es el parcial?': [0, 0, 1],
+  };
+  const embedder = {
+    embed: (texts: string[]) =>
+      Promise.resolve(texts.map((text) => VECTORES[text] ?? [0, 1, 0])),
+  };
+
+  async function sala(app: Express) {
+    const response = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    return response.body as { code: string };
+  }
+
+  function preguntar(app: Express, code: string, text: string, viewer: string) {
+    return request(app)
+      .post(`/api/rooms/${code}/questions`)
+      .set('x-viewer-id', viewer)
+      .send({ text, author: viewer });
+  }
+
+  it('junta "¿se viene la lluvia?" con "¿está por llover?"', async () => {
+    // Es el caso que motivó la comparación semántica: no comparten ni una
+    // palabra, así que el motor léxico las separa inevitablemente.
+    const { app } = createApp({ dataFile: null, clientDir: null, embedder });
+    const room = await sala(app);
+
+    const primera = await preguntar(app, room.code, '¿se viene la lluvia?', 'v1');
+    const segunda = await preguntar(app, room.code, '¿está por llover?', 'v2');
+
+    expect(segunda.body.isNewCluster).toBe(false);
+    expect(segunda.body.clusterId).toBe(primera.body.clusterId);
+
+    const board = await request(app).get(`/api/rooms/${room.code}/board`);
+    expect(board.body.clusters).toHaveLength(1);
+    expect(board.body.clusters[0].score).toBe(2);
+  });
+
+  it('sin comparación semántica quedan separadas', async () => {
+    const { app } = createApp({ dataFile: null, clientDir: null, embedder: null });
+    const room = await sala(app);
+
+    await preguntar(app, room.code, '¿se viene la lluvia?', 'v1');
+    const segunda = await preguntar(app, room.code, '¿está por llover?', 'v2');
+
+    expect(segunda.body.isNewCluster).toBe(true);
+  });
+
+  it('sigue separando temas distintos', async () => {
+    const { app } = createApp({ dataFile: null, clientDir: null, embedder });
+    const room = await sala(app);
+
+    await preguntar(app, room.code, '¿se viene la lluvia?', 'v1');
+    const otra = await preguntar(app, room.code, '¿cuándo es el parcial?', 'v2');
+
+    expect(otra.body.isNewCluster).toBe(true);
+  });
+
+  it('si el proveedor falla, la pregunta entra igual', async () => {
+    // Un problema con el servicio externo no puede impedir que alguien
+    // pregunte: se degrada al motor léxico y se sigue.
+    const roto = {
+      embed: () => Promise.reject(new Error('el proveedor no responde')),
+    };
+    const { app } = createApp({ dataFile: null, clientDir: null, embedder: roto });
+    const room = await sala(app);
+
+    const response = await preguntar(app, room.code, '¿se viene la lluvia?', 'v1');
+    expect(response.status).toBe(201);
+
+    const board = await request(app).get(`/api/rooms/${room.code}/board`);
+    expect(board.body.clusters).toHaveLength(1);
+  });
+
+  it('la configuración informa si está activa', async () => {
+    const conSemantica = createApp({ dataFile: null, clientDir: null, embedder }).app;
+    expect((await request(conSemantica).get('/api/config')).body.semantic).toBe(true);
+
+    const sinSemantica = createApp({ dataFile: null, clientDir: null, embedder: null }).app;
+    expect((await request(sinSemantica).get('/api/config')).body.semantic).toBe(false);
+  });
+});

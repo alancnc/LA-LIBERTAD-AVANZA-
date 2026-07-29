@@ -4,6 +4,8 @@ import type { Cluster, ClusterStatus, Question, Room } from '../types.js';
 export interface ClusterWithTexts {
   clusterId: string;
   texts: string[];
+  /** Vectores de esos textos, en el mismo orden; null donde no haya. */
+  embeddings: Array<number[] | null>;
 }
 
 /** Todo lo que hace falta para armar el tablero de una sala. */
@@ -17,6 +19,8 @@ export interface CreateQuestionInput {
   text: string;
   author: string;
   voterId: string;
+  /** Vector del texto, o null si la comparación semántica no está activa. */
+  embedding: number[] | null;
 }
 
 export interface CreatedQuestion {

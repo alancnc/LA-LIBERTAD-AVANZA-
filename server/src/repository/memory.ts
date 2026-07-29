@@ -111,12 +111,14 @@ export class JsonRepository implements Repository {
           // nuevas: si vuelven a preguntar lo mismo, hay que verlo de nuevo.
           (cluster.status === 'pending' || cluster.status === 'answering'),
       )
-      .map((cluster) => ({
-        clusterId: cluster.id,
-        texts: visible
-          .filter((question) => question.clusterId === cluster.id)
-          .map((question) => question.text),
-      }))
+      .map((cluster) => {
+        const miembros = visible.filter((question) => question.clusterId === cluster.id);
+        return {
+          clusterId: cluster.id,
+          texts: miembros.map((question) => question.text),
+          embeddings: miembros.map((question) => question.embedding ?? null),
+        };
+      })
       .filter((candidate) => candidate.texts.length > 0);
 
     const match = assign(candidates);
@@ -149,6 +151,7 @@ export class JsonRepository implements Repository {
       upvotes: [],
       createdAt: Date.now(),
       hidden: false,
+      embedding: input.embedding,
     };
     this.data.questions.push(question);
     this.persist();

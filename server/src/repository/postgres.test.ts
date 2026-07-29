@@ -54,8 +54,8 @@ describe.runIf(databaseUrl)('PostgresRepository bajo concurrencia', () => {
     return Promise.all(
       texts.map((text, index) =>
         repository.addQuestion(
-          { roomId: room.id, text, author: 'Alumno', voterId: `v${index}` },
-          (candidates) => findBestCluster(text, candidates, room.threshold),
+          { roomId: room.id, text, author: 'Alumno', voterId: `v${index}`, embedding: null },
+          (candidates) => findBestCluster(text, candidates, { threshold: room.threshold }),
         ),
       ),
     );

@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS votes (
   PRIMARY KEY (question_id, voter_id)
 );
 
+-- Vector del texto para la comparación semántica. Se guarda como JSON: son
+-- unos pocos cientos de números por pregunta y el volumen no justifica una
+-- extensión como pgvector, que además no está en todos los proveedores.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS embedding TEXT;
+
 CREATE INDEX IF NOT EXISTS clusters_room_idx  ON clusters(room_id);
 CREATE INDEX IF NOT EXISTS questions_room_idx ON questions(room_id);
 CREATE INDEX IF NOT EXISTS questions_cluster_idx ON questions(cluster_id);
@@ -120,6 +125,7 @@ interface QuestionRow {
   created_at: string;
   hidden: boolean;
   upvotes: string[] | null;
+  embedding: string | null;
 }
 
 function toRoom(row: RoomRow): Room {
@@ -157,7 +163,19 @@ function toQuestion(row: QuestionRow): Question {
     upvotes: row.upvotes ?? [],
     createdAt: Number(row.created_at),
     hidden: row.hidden,
+    embedding: parseEmbedding(row.embedding),
   };
+}
+
+/** Un vector ilegible no debe tumbar el tablero: se ignora y se sigue. */
+function parseEmbedding(raw: string | null): number[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((n) => typeof n === 'number') ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -337,8 +355,14 @@ export class PostgresRepository implements Repository {
       await client.query('BEGIN');
       await client.query('SELECT id FROM rooms WHERE id = $1 FOR UPDATE', [input.roomId]);
 
-      const candidateRows = await client.query<{ cluster_id: string; texts: string[] }>(
-        `SELECT c.id AS cluster_id, array_agg(q.text ORDER BY q.created_at) AS texts
+      const candidateRows = await client.query<{
+        cluster_id: string;
+        texts: string[];
+        embeddings: Array<string | null>;
+      }>(
+        `SELECT c.id AS cluster_id,
+                array_agg(q.text ORDER BY q.created_at)      AS texts,
+                array_agg(q.embedding ORDER BY q.created_at) AS embeddings
            FROM clusters c
            JOIN questions q ON q.cluster_id = c.id AND q.hidden = FALSE
           WHERE c.room_id = $1 AND c.status IN ('pending', 'answering')
@@ -347,7 +371,11 @@ export class PostgresRepository implements Repository {
       );
 
       const match = assign(
-        candidateRows.rows.map((row) => ({ clusterId: row.cluster_id, texts: row.texts })),
+        candidateRows.rows.map((row) => ({
+          clusterId: row.cluster_id,
+          texts: row.texts,
+          embeddings: (row.embeddings ?? []).map(parseEmbedding),
+        })),
       );
 
       let cluster: Cluster;
@@ -385,11 +413,12 @@ export class PostgresRepository implements Repository {
         upvotes: [],
         createdAt: Date.now(),
         hidden: false,
+        embedding: input.embedding,
       };
       await client.query(
         `INSERT INTO questions
-           (id, room_id, cluster_id, text, author, voter_id, created_at, hidden)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)`,
+           (id, room_id, cluster_id, text, author, voter_id, created_at, hidden, embedding)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8)`,
         [
           question.id,
           question.roomId,
@@ -398,6 +427,7 @@ export class PostgresRepository implements Repository {
           question.author,
           question.voterId,
           question.createdAt,
+          input.embedding ? JSON.stringify(input.embedding) : null,
         ],
       );
 
