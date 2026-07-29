@@ -200,6 +200,18 @@ export class PostgresRepository implements Repository {
       connectionTimeoutMillis: 10_000,
       ssl: sslConfigFor(connectionString, caCertificate),
     });
+
+    // node-postgres emite 'error' cuando una conexión que estaba ociosa se cae:
+    // el proveedor la cerró, se perdió la red, se reinició la base. Sin un
+    // listener, EventEmitter convierte ese evento en una excepción no capturada
+    // que mata el proceso; en serverless eso es la función entera cayéndose con
+    // un 500 sin cuerpo, imposible de diagnosticar desde afuera.
+    //
+    // No hay nada que reparar acá: el pool descarta la conexión rota y abre otra
+    // cuando haga falta. Alcanza con registrarlo para que quede en los logs.
+    this.pool.on('error', (error) => {
+      console.error('Conexión ociosa de Postgres caída:', error);
+    });
   }
 
   /** Crea el esquema si falta. Idempotente y cacheado por instancia. */

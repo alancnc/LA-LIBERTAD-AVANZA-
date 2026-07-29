@@ -191,3 +191,15 @@ describe('sslConfigFor', () => {
     });
   });
 });
+
+describe('resistencia del pool', () => {
+  it('no se cae cuando Postgres reporta una conexión ociosa caída', () => {
+    // Sin un listener de 'error', EventEmitter lanza y el proceso muere. En
+    // serverless eso es la función entera respondiendo 500 sin cuerpo.
+    const repository = new PostgresRepository('postgresql://u:p@127.0.0.1:1/x?sslmode=disable');
+    const pool = (repository as unknown as { pool: pg.Pool }).pool;
+
+    expect(pool.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => pool.emit('error', new Error('conexión caída'))).not.toThrow();
+  });
+});

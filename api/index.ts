@@ -66,6 +66,22 @@ function buildFallback(cause: unknown): Handler {
   };
 }
 
+/**
+ * Última red: cualquier error que escape a todo lo anterior mata la instancia y
+ * Vercel responde 500 sin cuerpo (FUNCTION_INVOCATION_FAILED), que no dice nada.
+ *
+ * Registrarlos deja rastro en los logs y, sobre todo, evita que el proceso
+ * termine: la API es sin estado, así que seguir viva y poder contestar
+ * /api/health es preferible a caerse en silencio. No reemplaza al manejo de
+ * errores de cada ruta; existe para que un descuido sea diagnosticable.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('Promesa rechazada sin manejar:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Excepción no capturada:', error);
+});
+
 let handler: Handler;
 try {
   handler = buildApp();
