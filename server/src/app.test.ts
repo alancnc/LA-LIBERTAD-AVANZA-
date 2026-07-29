@@ -681,3 +681,86 @@ describe('agrupamiento por significado a través de la API', () => {
     expect((await request(sinSemantica).get('/api/config')).body.semantic).toBe(false);
   });
 });
+
+describe('agrupamiento decidido por el modelo', () => {
+  /** Clasificador simulado: manda al primer tema todo lo que hable de agua. */
+  const matcher = {
+    match: (question: string, topics: Array<{ id: string; label: string }>) => {
+      const sobreAgua = /llov|lluvia|agua/i.test(question);
+      const tema = topics.find((t) => /llov|lluvia|agua/i.test(t.label));
+      return Promise.resolve(sobreAgua && tema ? tema.id : null);
+    },
+  };
+
+  function preguntar(app: Express, code: string, text: string, viewer: string) {
+    return request(app)
+      .post(`/api/rooms/${code}/questions`)
+      .set('x-viewer-id', viewer)
+      .send({ text, author: viewer });
+  }
+
+  it('une preguntas que no comparten ninguna palabra', async () => {
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+
+    const primera = await preguntar(app, code, '¿se viene la lluvia?', 'v1');
+    const segunda = await preguntar(app, code, '¿está por llover?', 'v2');
+
+    expect(segunda.body.isNewCluster).toBe(false);
+    expect(segunda.body.clusterId).toBe(primera.body.clusterId);
+  });
+
+  it('deja que abra tema nuevo cuando el modelo dice que no corresponde', async () => {
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+
+    await preguntar(app, code, '¿se viene la lluvia?', 'v1');
+    const otra = await preguntar(app, code, '¿cuándo es el parcial?', 'v2');
+    expect(otra.body.isNewCluster).toBe(true);
+  });
+
+  it('si el modelo falla, la pregunta entra igual', async () => {
+    // Una caída del servicio externo no puede dejar a nadie sin preguntar.
+    const roto = { match: () => Promise.reject(new Error('sin servicio')) };
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher: roto });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+
+    const response = await preguntar(app, sala.body.code, '¿se viene la lluvia?', 'v1');
+    expect(response.status).toBe(201);
+  });
+
+  it('el motor léxico sigue actuando cuando el modelo no decide', async () => {
+    const indeciso = { match: () => Promise.resolve(null) };
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher: indeciso });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+
+    await preguntar(app, code, '¿Cómo se resuelve una integral por partes?', 'v1');
+    const segunda = await preguntar(app, code, 'integrales por partes cómo se resuelven', 'v2');
+    expect(segunda.body.isNewCluster).toBe(false);
+  });
+
+  it('ninguna respuesta expone la credencial', async () => {
+    const { app } = createApp({
+      dataFile: null,
+      clientDir: null,
+      adminPassword: 'clave-docente',
+      matcher,
+    });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+    await preguntar(app, code, '¿se viene la lluvia?', 'v1');
+
+    // El cliente sólo puede saber si la función está activa, nunca con qué clave.
+    for (const ruta of ['/api/config', '/api/health', `/api/rooms/${code}/board`]) {
+      const cuerpo = JSON.stringify((await request(app).get(ruta)).body);
+      expect(cuerpo).not.toMatch(/sk-ant/);
+      expect(cuerpo).not.toMatch(/apiKey/i);
+      expect(cuerpo).not.toMatch(/ANTHROPIC/i);
+    }
+
+    expect((await request(app).get('/api/config')).body.smartGrouping).toBe(true);
+  });
+});

@@ -174,7 +174,42 @@ local y funciona sin conexión.
 Un tema ya respondido no absorbe preguntas nuevas a propósito: si alguien vuelve
 a preguntar lo mismo, el docente necesita verlo otra vez.
 
-### Comparar significado, no sólo palabras
+### Agrupar por lo que la pregunta quiere decir
+
+Hay tres señales, de menor a mayor precisión, y alcanza con que una se convenza:
+
+| Señal | Requiere | Une | No puede unir |
+|---|---|---|---|
+| Léxica | nada | *parcial* / *parsial* | *lluvia* / *llover* |
+| Semántica | `EMBEDDINGS_API_KEY` | *lluvia* / *llover* | — |
+| **Claude** | `ANTHROPIC_API_KEY` | *lluvia* / *llover* | — |
+
+Claude además distingue lo que las otras dos no: *"¿cuándo es el parcial?"* y
+*"¿qué entra en el parcial?"* comparten palabras y contexto, pero necesitan
+respuestas distintas, así que van a temas separados.
+
+La decisión se toma **antes** de abrir la transacción: sostener el lock de la
+sala durante una llamada de red serializaría a toda la clase detrás de cada
+pregunta. Al insertar se revalida que el tema elegido siga abierto.
+
+Si el servicio no responde, la pregunta entra igual y se agrupa por palabras.
+Una caída externa no puede dejar a nadie sin preguntar.
+
+#### La credencial
+
+- Se lee **sólo** de una variable de entorno del servidor.
+- Se guarda en un campo privado de JavaScript (`#`), no en uno `private` de
+  TypeScript: ese desaparece al compilar y `JSON.stringify` del objeto volcaría
+  la credencial en cualquier log descuidado.
+- Viaja únicamente en la cabecera de autenticación, nunca en el cuerpo.
+- Los errores del proveedor se resumen al código HTTP: el cuerpo puede traer
+  detalles de la cuenta.
+- El cliente sólo recibe `smartGrouping: true|false`.
+
+Hay tests que verifican cada uno de esos puntos, incluido que ninguna respuesta
+de la API contenga rastro de la clave.
+
+### Comparar significado con embeddings
 
 Lo anterior compara **palabras**, y eso tiene un techo: "¿se viene la lluvia?" y
 "¿está por llover?" son la misma pregunta y no comparten ninguna, así que la
@@ -286,12 +321,12 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 115 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 134 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia y de seguridad de la base (145 en total):
+se suman los tests de concurrencia y de seguridad de la base (164 en total):
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test

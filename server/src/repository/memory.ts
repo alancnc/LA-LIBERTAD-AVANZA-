@@ -121,7 +121,13 @@ export class JsonRepository implements Repository {
       })
       .filter((candidate) => candidate.texts.length > 0);
 
-    const match = assign(candidates);
+    // Un tema preseleccionado sólo vale si sigue siendo candidato válido.
+    const preferido = input.preferredClusterId
+      ? candidates.find((c) => c.clusterId === input.preferredClusterId)
+      : undefined;
+    const match = preferido
+      ? { clusterId: preferido.clusterId, score: 1 }
+      : assign(candidates);
 
     let cluster: Cluster;
     let isNewCluster = false;

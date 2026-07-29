@@ -21,6 +21,15 @@ export interface CreateQuestionInput {
   voterId: string;
   /** Vector del texto, o null si la comparación semántica no está activa. */
   embedding: number[] | null;
+  /**
+   * Tema elegido de antemano, cuando lo decidió un clasificador externo.
+   *
+   * Esa decisión necesita una llamada de red, y hacerla dentro de la
+   * transacción dejaría el lock de la sala tomado durante todo ese tiempo,
+   * serializando a la clase entera. Se resuelve antes y se valida acá: si el
+   * grupo ya no existe o dejó de estar abierto, se recae en `assign`.
+   */
+  preferredClusterId?: string | null;
 }
 
 export interface CreatedQuestion {

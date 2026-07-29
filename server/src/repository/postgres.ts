@@ -370,13 +370,20 @@ export class PostgresRepository implements Repository {
         [input.roomId],
       );
 
-      const match = assign(
-        candidateRows.rows.map((row) => ({
-          clusterId: row.cluster_id,
-          texts: row.texts,
-          embeddings: (row.embeddings ?? []).map(parseEmbedding),
-        })),
-      );
+      const candidates = candidateRows.rows.map((row) => ({
+        clusterId: row.cluster_id,
+        texts: row.texts,
+        embeddings: (row.embeddings ?? []).map(parseEmbedding),
+      }));
+
+      // Un tema preseleccionado sólo vale si sigue siendo candidato válido:
+      // entre que se decidió y llegó acá pudo cerrarse o responderse.
+      const preferido = input.preferredClusterId
+        ? candidates.find((c) => c.clusterId === input.preferredClusterId)
+        : undefined;
+      const match = preferido
+        ? { clusterId: preferido.clusterId, score: 1 }
+        : assign(candidates);
 
       let cluster: Cluster;
       let isNewCluster = false;

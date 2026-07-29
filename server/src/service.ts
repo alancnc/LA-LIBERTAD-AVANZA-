@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
 import { DEFAULT_SEMANTIC_THRESHOLD, type Embedder } from './text/embeddings.js';
+import type { TopicMatcher, TopicOption } from './text/claude.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
 import type { Repository } from './repository/types.js';
 import type {
@@ -46,10 +47,46 @@ export class Service {
     /** Comparación por significado. Sin esto sólo se compara por palabras. */
     private readonly embedder: Embedder | null = null,
     private readonly semanticThreshold: number = DEFAULT_SEMANTIC_THRESHOLD,
+    /** Clasificador por lenguaje. Es la señal más precisa de las tres. */
+    private readonly matcher: TopicMatcher | null = null,
   ) {}
 
   get semanticEnabled(): boolean {
     return this.embedder !== null;
+  }
+
+  get matcherEnabled(): boolean {
+    return this.matcher !== null;
+  }
+
+  /**
+   * Le pregunta al clasificador a qué tema pertenece la pregunta.
+   *
+   * Se resuelve antes de abrir la transacción a propósito: sostener el lock de
+   * la sala durante una llamada de red serializaría a toda la clase detrás de
+   * cada pregunta. Cualquier fallo devuelve null y se agrupa como siempre.
+   */
+  private async preselectTopic(room: Room, text: string): Promise<string | null> {
+    if (!this.matcher) return null;
+    try {
+      const { clusters, questions } = await this.repository.getBoardData(room.id);
+      const abiertos = clusters.filter(
+        (cluster) => cluster.status === 'pending' || cluster.status === 'answering',
+      );
+      if (abiertos.length === 0) return null;
+
+      const opciones: TopicOption[] = abiertos.map((cluster) => ({
+        id: cluster.id,
+        label: cluster.label,
+        examples: questions
+          .filter((question) => question.clusterId === cluster.id)
+          .map((question) => question.text),
+      }));
+      return await this.matcher.match(text, opciones);
+    } catch (error) {
+      console.error('El clasificador de temas no respondió:', error);
+      return null;
+    }
   }
 
   /**
@@ -210,10 +247,14 @@ export class Service {
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
-    const embedding = await this.embed(text);
+    // Las dos consultas externas van en paralelo: una espera, no dos.
+    const [embedding, preferredClusterId] = await Promise.all([
+      this.embed(text),
+      this.preselectTopic(room, text),
+    ]);
 
     return this.repository.addQuestion(
-      { roomId: room.id, text, author, voterId, embedding },
+      { roomId: room.id, text, author, voterId, embedding, preferredClusterId },
       (candidates) =>
         findBestCluster(text, candidates, {
           threshold: room.threshold,

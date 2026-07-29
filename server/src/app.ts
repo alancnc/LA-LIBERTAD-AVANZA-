@@ -13,6 +13,7 @@ import { JsonRepository } from './repository/memory.js';
 import { PostgresRepository } from './repository/postgres.js';
 import type { Repository } from './repository/types.js';
 import { createSemanticConfig, type Embedder } from './text/embeddings.js';
+import { createTopicMatcher, type TopicMatcher } from './text/claude.js';
 import type { ClusterStatus } from './types.js';
 
 const VALID_STATUSES: ClusterStatus[] = ['pending', 'answering', 'answered', 'discarded'];
@@ -42,6 +43,8 @@ export interface AppOptions {
   /** Comparación por significado. Por defecto se toma del entorno. */
   embedder?: Embedder | null;
   semanticThreshold?: number;
+  /** Clasificador de temas por lenguaje. Por defecto se toma del entorno. */
+  matcher?: TopicMatcher | null;
   /**
    * Si es true y no hay base de datos configurada, la API responde 503 en lugar
    * de trabajar en memoria. En serverless esto es imprescindible: sin base, cada
@@ -98,11 +101,13 @@ export function createApp(options: AppOptions = {}) {
   const adminPassword = options.adminPassword?.trim() || null;
   const semantica = createSemanticConfig();
   const embedder = options.embedder !== undefined ? options.embedder : semantica.embedder;
+  const matcher = options.matcher !== undefined ? options.matcher : createTopicMatcher();
   const service = new Service(
     repository,
     adminPassword,
     embedder,
     options.semanticThreshold ?? semantica.threshold,
+    matcher,
   );
   const persistenceMissing = Boolean(options.requirePersistence) && !options.databaseUrl;
 
@@ -202,6 +207,8 @@ export function createApp(options: AppOptions = {}) {
         realtime,
         masterAdmin: service.masterAdminEnabled,
         semantic: service.semanticEnabled,
+        // Nunca se expone la clave, sólo si la función está activa.
+        smartGrouping: service.matcherEnabled,
       });
     }),
   );
@@ -444,6 +451,7 @@ export function createApp(options: AppOptions = {}) {
         masterAdmin: service.masterAdminEnabled,
         // Si está en false, la app agrupa sólo por palabras compartidas.
         semantic: service.semanticEnabled,
+        smartGrouping: service.matcherEnabled,
         // Se informa el motivo exacto: sin esto, un fallo de conexión se
         // manifiesta como errores sueltos en pantallas que no tienen que ver.
         storage: almacenamiento === null ? 'ok' : 'error',
