@@ -360,6 +360,9 @@ export function createApp(options: AppOptions = {}) {
         // avisar "tu pregunta se sumó a un tema que ya estaba".
         similarity: Number(result.score.toFixed(3)),
         clusterLabel: result.cluster.label,
+        // Deja ver si el clasificador por lenguaje intervino o si agrupó el
+        // motor de palabras: sin esto, "no parece estar usándose" es indemostrable.
+        groupedBy: result.groupedBy,
       });
     }),
   );

@@ -234,7 +234,14 @@ export class Service {
   async addQuestion(
     room: Room,
     input: { text: string; author: string; voterId: string },
-  ): Promise<{ question: Question; cluster: Cluster; isNewCluster: boolean; score: number }> {
+  ): Promise<{
+    question: Question;
+    cluster: Cluster;
+    isNewCluster: boolean;
+    score: number;
+    /** Qué señal decidió el agrupamiento. Sirve para ver si Claude actuó. */
+    groupedBy: 'claude' | 'palabras' | 'tema-nuevo';
+  }> {
     if (room.closed) {
       throw new ServiceError(409, 'La sala está cerrada: ya no se aceptan preguntas');
     }
@@ -253,7 +260,7 @@ export class Service {
       this.preselectTopic(room, text),
     ]);
 
-    return this.repository.addQuestion(
+    const result = await this.repository.addQuestion(
       { roomId: room.id, text, author, voterId, embedding, preferredClusterId },
       (candidates) =>
         findBestCluster(text, candidates, {
@@ -262,6 +269,14 @@ export class Service {
           semanticThreshold: this.semanticThreshold,
         }),
     );
+
+    // Si el tema es el que eligió el clasificador, fue él quien decidió.
+    const porClaude =
+      preferredClusterId !== null && result.cluster.id === preferredClusterId;
+    return {
+      ...result,
+      groupedBy: result.isNewCluster ? 'tema-nuevo' : porClaude ? 'claude' : 'palabras',
+    };
   }
 
   /** Alterna el voto de un participante sobre una pregunta. */

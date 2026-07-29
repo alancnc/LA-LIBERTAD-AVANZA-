@@ -764,3 +764,41 @@ describe('agrupamiento decidido por el modelo', () => {
     expect((await request(app).get('/api/config')).body.smartGrouping).toBe(true);
   });
 });
+
+describe('diagnóstico del agrupamiento', () => {
+  const matcher = {
+    match: (_q: string, topics: Array<{ id: string }>) =>
+      Promise.resolve(topics[0]?.id ?? null),
+  };
+
+  function preguntar(app: Express, code: string, text: string, viewer: string) {
+    return request(app)
+      .post(`/api/rooms/${code}/questions`)
+      .set('x-viewer-id', viewer)
+      .send({ text, author: viewer });
+  }
+
+  it('informa qué señal agrupó cada pregunta', async () => {
+    // Sin esto, "no parece estar usando la API" no se puede ni confirmar ni
+    // desmentir desde afuera.
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+
+    const primera = await preguntar(app, code, 'primera pregunta del día', 'v1');
+    expect(primera.body.groupedBy).toBe('tema-nuevo');
+
+    const segunda = await preguntar(app, code, 'algo totalmente distinto', 'v2');
+    expect(segunda.body.groupedBy).toBe('claude');
+  });
+
+  it('dice "palabras" cuando agrupó el motor léxico', async () => {
+    const { app } = createApp({ dataFile: null, clientDir: null, matcher: null });
+    const sala = await request(app).post('/api/rooms').send({ title: 'Clase' });
+    const code = sala.body.code as string;
+
+    await preguntar(app, code, '¿Cómo se resuelve una integral por partes?', 'v1');
+    const segunda = await preguntar(app, code, 'integrales por partes cómo se resuelven', 'v2');
+    expect(segunda.body.groupedBy).toBe('palabras');
+  });
+});
