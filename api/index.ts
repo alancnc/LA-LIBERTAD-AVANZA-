@@ -9,8 +9,7 @@
  * caliente, las peticiones siguientes reutilizan el pool de conexiones.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createApp } from '../server/src/app.js';
-import { CONNECTION_VARIABLE_NAMES, resolveDatabaseUrl } from '../server/src/config.js';
+import { createApp, CONNECTION_VARIABLE_NAMES, resolveDatabaseUrl } from 'server';
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 
