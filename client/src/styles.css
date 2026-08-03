@@ -1,17 +1,27 @@
+/*
+ * Identidad visual de la Escuela de Dirigentes: violeta institucional sobre
+ * fondo claro. Los dos violetas son los del escudo, muestreados del archivo:
+ * el campo del escudo (#503890) y el trazo del contorno (#301860).
+ */
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface-2: #1c2430;
-  --border: #2a3441;
-  --text: #e6edf3;
-  --text-dim: #8b98a5;
-  --accent: #3b82f6;
-  --accent-soft: rgba(59, 130, 246, 0.14);
-  --success: #22c55e;
-  --warn: #f59e0b;
-  --danger: #ef4444;
-  --radius: 12px;
-  color-scheme: dark;
+  --primary: #503890;
+  --primary-strong: #301860;
+  --primary-soft: #eeeaf7;
+  --primary-softer: #f8f6fc;
+  --bg: #f5f3fa;
+  --surface: #ffffff;
+  --border: #ded8ee;
+  --text: #2a2140;
+  --text-dim: #6e6690;
+  --success: #1e7d43;
+  --success-soft: #e7f5ec;
+  --warn: #a3630b;
+  --warn-soft: #fdf3e2;
+  --danger: #b3261e;
+  --danger-soft: #fbeceb;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(43, 36, 64, 0.08), 0 4px 16px rgba(43, 36, 64, 0.06);
+  color-scheme: light;
 }
 
 * {
@@ -28,7 +38,7 @@ body {
 }
 
 a {
-  color: var(--accent);
+  color: var(--primary);
 }
 
 button {
@@ -46,18 +56,19 @@ textarea,
 select {
   font: inherit;
   width: 100%;
-  padding: 0.6rem 0.75rem;
-  background: var(--bg);
+  padding: 0.65rem 0.8rem;
+  background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: 10px;
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: -1px;
+  border-color: var(--primary);
 }
 
 textarea {
@@ -75,6 +86,39 @@ textarea {
   max-width: 72rem;
 }
 
+/* ------------------------------------------------------------------ marca */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.brand__logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.brand__name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--primary-strong);
+  line-height: 1.25;
+}
+
+.brand__sub {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* ---------------------------------------------------------------- botones */
 
 .btn {
@@ -82,36 +126,43 @@ textarea {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid var(--border);
+  padding: 0.6rem 1.05rem;
+  border: 1.5px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
-  transition: background 0.15s, border-color 0.15s;
+  font-weight: 500;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
 .btn:hover:not(:disabled) {
-  border-color: var(--accent);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary);
+  border-color: var(--primary);
   color: #fff;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #2f6fd6;
+  background: var(--primary-strong);
+  border-color: var(--primary-strong);
+  color: #fff;
 }
 
 .btn--ghost {
   background: transparent;
+  border-color: transparent;
+  color: var(--primary);
 }
 
 .btn--small {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.82rem;
+  padding: 0.32rem 0.65rem;
+  font-size: 0.84rem;
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -127,14 +178,15 @@ textarea {
   gap: 1rem;
   align-items: flex-start;
   justify-content: space-between;
-  padding-bottom: 1rem;
+  padding-bottom: 1.1rem;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px solid var(--primary);
 }
 
 .header h1 {
   margin: 0;
   font-size: 1.5rem;
+  color: var(--primary-strong);
 }
 
 .header__sub {
@@ -147,7 +199,8 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.25rem;
+  padding: 1.4rem;
+  box-shadow: var(--shadow);
 }
 
 .card + .card {
@@ -157,7 +210,7 @@ textarea {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .row {
@@ -178,31 +231,40 @@ textarea {
 
 .label {
   display: block;
-  font-size: 0.82rem;
-  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary-strong);
   margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.label__req {
+  color: var(--danger);
 }
 
 .error {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--danger-soft);
   border: 1px solid var(--danger);
-  color: #fca5a5;
+  color: var(--danger);
   padding: 0.6rem 0.8rem;
   border-radius: 10px;
   font-size: 0.9rem;
 }
 
 .notice {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  color: var(--primary-strong);
   padding: 0.6rem 0.8rem;
   border-radius: 10px;
   font-size: 0.9rem;
 }
 
 .notice--success {
-  background: rgba(34, 197, 94, 0.12);
+  background: var(--success-soft);
   border-color: var(--success);
+  color: var(--success);
 }
 
 /* ------------------------------------------------------------- código sala */
@@ -211,8 +273,8 @@ textarea {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 2rem;
   letter-spacing: 0.35rem;
-  font-weight: 700;
-  color: var(--accent);
+  font-weight: 800;
+  color: var(--primary);
 }
 
 .code-input {
@@ -235,18 +297,21 @@ textarea {
 .stat {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-top: 3px solid var(--primary);
   border-radius: var(--radius);
   padding: 0.8rem 1rem;
+  box-shadow: var(--shadow);
 }
 
 .stat__value {
   font-size: 1.6rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.2;
+  color: var(--primary-strong);
 }
 
 .stat__label {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -259,47 +324,51 @@ textarea {
   gap: 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
+  border-left: 4px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: 1rem 1.1rem;
   margin-bottom: 0.75rem;
+  box-shadow: var(--shadow);
 }
 
 .cluster--answering {
   border-left-color: var(--warn);
-  background: var(--surface-2);
+  background: var(--warn-soft);
 }
 
 .cluster--answered {
   border-left-color: var(--success);
-  opacity: 0.62;
+  opacity: 0.66;
 }
 
 .cluster--discarded {
-  opacity: 0.4;
+  opacity: 0.45;
 }
 
 .cluster--top {
-  border-left-color: var(--accent);
+  border-left-color: var(--primary);
 }
 
 .cluster__rank {
   flex-shrink: 0;
-  width: 3.25rem;
+  width: 3.6rem;
   text-align: center;
 }
 
 .cluster__score {
   font-size: 1.7rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.1;
+  color: var(--primary);
 }
 
 .cluster__score-label {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
+  line-height: 1.2;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* La columna es angosta: sin esto "personas" se desborda sobre el título. */
+  overflow-wrap: anywhere;
 }
 
 .cluster__body {
@@ -310,7 +379,8 @@ textarea {
 .cluster__label {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
   overflow-wrap: anywhere;
 }
 
@@ -325,13 +395,14 @@ textarea {
 
 .badge {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: 0.12rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .badge--pending {
@@ -341,11 +412,13 @@ textarea {
 .badge--answering {
   color: var(--warn);
   border-color: var(--warn);
+  background: var(--warn-soft);
 }
 
 .badge--answered {
   color: var(--success);
   border-color: var(--success);
+  background: var(--success-soft);
 }
 
 .badge--discarded {
@@ -354,9 +427,9 @@ textarea {
 }
 
 .badge--hot {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
 }
 
 .cluster__actions {
@@ -370,7 +443,7 @@ textarea {
   margin-top: 0.6rem;
   font-size: 0.88rem;
   color: var(--text-dim);
-  border-left: 2px solid var(--border);
+  border-left: 3px solid var(--primary-soft);
   padding-left: 0.7rem;
 }
 
@@ -388,7 +461,7 @@ textarea {
   gap: 0.75rem;
   align-items: flex-start;
   padding: 0.6rem 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--primary-softer);
 }
 
 .question:last-child {
@@ -402,36 +475,37 @@ textarea {
 }
 
 .question__author {
-  font-size: 0.78rem;
-  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary);
 }
 
 .vote {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 2.75rem;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid var(--border);
+  min-width: 2.9rem;
+  padding: 0.3rem 0.45rem;
+  border: 1.5px solid var(--border);
   border-radius: 10px;
-  background: transparent;
+  background: var(--surface);
   color: var(--text-dim);
   line-height: 1.1;
 }
 
 .vote:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .vote--voted {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
 }
 
 .vote__count {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 0.95rem;
 }
 
@@ -443,6 +517,9 @@ textarea {
   text-align: center;
   color: var(--text-dim);
   padding: 3rem 1rem;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
 }
 
 /* ------------------------------------------------------------------ varios */
@@ -480,18 +557,103 @@ textarea {
 }
 
 .tab {
-  padding: 0.4rem 0.85rem;
+  padding: 0.4rem 0.9rem;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
   color: var(--text-dim);
   font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .tab--active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+/* -------------------------------------------------- pantalla de proyección */
+
+.projection {
+  min-height: 100vh;
+  background: linear-gradient(160deg, var(--primary-strong) 0%, var(--primary) 60%, #5a46a0 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.projection__logo {
+  width: min(140px, 20vw);
+  height: auto;
+  background: #fff;
+  border-radius: 24px;
+  padding: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+}
+
+.projection__title {
+  margin: 1.2rem 0 0;
+  font-size: clamp(1.3rem, 3vw, 2.2rem);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.projection__code {
+  margin: 0.8rem 0 0.4rem;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: clamp(3rem, 9vw, 6rem);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  background: #fff;
+  color: var(--primary-strong);
+  padding: 0.08em 0.35em;
+  border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+}
+
+.projection__url {
+  font-size: clamp(1rem, 2.4vw, 1.6rem);
+  opacity: 0.92;
+}
+
+.projection__list {
+  width: min(60rem, 100%);
+  margin-top: 1.4rem;
+  text-align: left;
+}
+
+.projection__item {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 0.9rem 1.3rem;
+  margin-bottom: 0.7rem;
+  backdrop-filter: blur(4px);
+}
+
+.projection__item--answering {
+  background: #fff;
+  color: var(--primary-strong);
+}
+
+.projection__score {
+  font-size: clamp(1.4rem, 3vw, 2.2rem);
+  font-weight: 800;
+  min-width: 2.4em;
+  text-align: center;
+}
+
+.projection__question {
+  font-size: clamp(1rem, 2.4vw, 1.5rem);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {
@@ -501,11 +663,16 @@ textarea {
   }
 
   .cluster__rank {
-    width: 2.6rem;
+    width: 3.1rem;
   }
 
   .code-display {
     font-size: 1.5rem;
     letter-spacing: 0.25rem;
+  }
+
+  .brand__logo {
+    width: 48px;
+    height: 48px;
   }
 }

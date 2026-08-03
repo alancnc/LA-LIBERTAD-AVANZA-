@@ -52,7 +52,10 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
   });
 
   async function createRoom(title = 'Análisis Matemático II') {
-    const response = await request(app).post('/api/rooms').send({ title });
+    const response = await request(app)
+      .post('/api/rooms')
+      .set('x-admin-password', 'clave-docente')
+      .send({ title });
     expect(response.status).toBe(201);
     return response.body as { code: string; adminKey: string };
   }
@@ -121,11 +124,43 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       expect(response.status).toBe(400);
     });
 
-    it('usa "Anónimo" cuando no se firma la pregunta', async () => {
+    it('rechaza una pregunta sin nombre: no hay preguntas anónimas', async () => {
       const room = await createRoom();
-      await ask(room.code, '¿Cuándo es el parcial?', 'v1', '   ');
+      const sinNombre = await ask(room.code, '¿Cuándo es el parcial?', 'v1', '   ');
+      expect(sinNombre.status).toBe(400);
+      expect(sinNombre.body.error).toMatch(/nombre/i);
+
+      const unaLetra = await ask(room.code, '¿Cuándo es el parcial?', 'v1', 'A');
+      expect(unaLetra.status).toBe(400);
+    });
+
+    it('guarda el nombre con el que se firmó', async () => {
+      const room = await createRoom();
+      await ask(room.code, '¿Cuándo es el parcial?', 'v1', 'Sofía Pérez');
       const board = await request(app).get(`/api/rooms/${room.code}/board`);
-      expect(board.body.clusters[0].questions[0].author).toBe('Anónimo');
+      expect(board.body.clusters[0].questions[0].author).toBe('Sofía Pérez');
+    });
+
+    it('frena a quien manda preguntas en ráfaga', async () => {
+      const room = await createRoom();
+      const textos = [
+        '¿Cuándo es el parcial?',
+        '¿Dónde subo el trabajo práctico?',
+        '¿Va a haber recuperatorio?',
+        '¿Las clases quedan grabadas?',
+        '¿Se puede usar calculadora?',
+      ];
+      const respuestas = [];
+      for (const texto of textos) {
+        respuestas.push(await ask(room.code, texto, 'apurado', 'El Apurado'));
+      }
+      // Las primeras pasan; la quinta en el mismo minuto se frena.
+      expect(respuestas.slice(0, 4).every((r) => r.status === 201)).toBe(true);
+      expect(respuestas.at(4)?.status).toBe(429);
+
+      // Y no bloquea a los demás participantes.
+      const otra = await ask(room.code, '¿Hay bibliografía?', 'tranquila', 'La Tranquila');
+      expect(otra.status).toBe(201);
     });
 
     it('no acepta preguntas en una sala cerrada', async () => {
@@ -298,6 +333,65 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     it('informa que el área del docente está habilitada', async () => {
       const response = await request(app).get('/api/config');
       expect(response.body.masterAdmin).toBe(true);
+    });
+
+    it('no deja crear clases a cualquiera que tenga la URL', async () => {
+      const sinClave = await request(app).post('/api/rooms').send({ title: 'Clase pirata' });
+      expect(sinClave.status).toBe(403);
+
+      const conClaveMala = await request(app)
+        .post('/api/rooms')
+        .set('x-admin-password', 'otra')
+        .send({ title: 'Clase pirata' });
+      expect(conClaveMala.status).toBe(403);
+    });
+
+    it('corta la prueba de contraseñas por fuerza bruta', async () => {
+      // Cada intento fallido se paga con una espera, así que la tanda se manda
+      // en paralelo: lo que se comprueba es el corte, no cuánto tardó.
+      const intentos = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          request(app).post('/api/admin/session').send({ password: 'no-es' }),
+        ),
+      );
+      expect(intentos.every((intento) => intento.status === 403)).toBe(true);
+
+      const cortado = await request(app).post('/api/admin/session').send({ password: 'no-es' });
+      expect(cortado.status).toBe(429);
+
+      // Y el corte no deja afuera a quien sí sabe la contraseña... salvo que
+      // venga del mismo cliente bloqueado: eso es justamente lo que se quiere.
+      const correcta = await request(app)
+        .post('/api/admin/session')
+        .send({ password: 'clave-docente' });
+      expect(correcta.status).toBe(429);
+    });
+  });
+
+  describe('cabeceras de seguridad', () => {
+    it('no permite embeber la app ni adivinar el tipo de contenido', async () => {
+      const response = await request(app).get('/api/config');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+      expect(response.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+      expect(response.headers['content-security-policy']).toContain("script-src 'self'");
+    });
+
+    it('no abre la API a otros orígenes salvo que se los nombre', async () => {
+      const cerrada = await request(app)
+        .get('/api/config')
+        .set('Origin', 'https://sitio-ajeno.example');
+      expect(cerrada.headers['access-control-allow-origin']).toBeUndefined();
+
+      const { app: abierta } = createApp({
+        repository: create(),
+        clientDir: null,
+        allowedOrigins: 'https://sitio-propio.example',
+      });
+      const permitida = await request(abierta)
+        .get('/api/config')
+        .set('Origin', 'https://sitio-propio.example');
+      expect(permitida.headers['access-control-allow-origin']).toBe('https://sitio-propio.example');
     });
   });
 
@@ -568,10 +662,13 @@ describe('recuperación tras un fallo de almacenamiento', () => {
       adminPassword: 'clave',
     });
 
-    const primera = await request(app).post('/api/rooms').send({ title: 'x' });
+    const crear = () =>
+      request(app).post('/api/rooms').set('x-admin-password', 'clave').send({ title: 'x' });
+
+    const primera = await crear();
     expect(primera.status).toBe(500);
 
-    const segunda = await request(app).post('/api/rooms').send({ title: 'x' });
+    const segunda = await crear();
     expect(segunda.status).toBe(201);
   });
 

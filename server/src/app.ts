@@ -52,6 +52,11 @@ export interface AppOptions {
    * desaparece de inmediato. Es preferible un error claro a ese comportamiento.
    */
   requirePersistence?: boolean;
+  /**
+   * Orígenes autorizados a llamar a esta API desde otro dominio, separados por
+   * coma. Vacío (lo habitual) significa sin CORS: sólo el mismo origen.
+   */
+  allowedOrigins?: string;
 }
 
 /**
@@ -137,7 +142,46 @@ export function createApp(options: AppOptions = {}) {
   const DIAGNOSTIC_PATHS = ['/api/health', '/api/config'];
 
   const app = express();
-  app.use(cors());
+
+  // El cliente se sirve desde el mismo origen que la API (en desarrollo, a
+  // través del proxy de Vite), así que no hace falta CORS para que la app
+  // funcione. Abrirlo a todo el mundo sólo habilita que cualquier sitio use
+  // esta API desde el navegador de un tercero. Queda disponible para quien lo
+  // necesite, pero hay que nombrar los orígenes.
+  const allowedOrigins = (options.allowedOrigins ?? process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.length > 0) {
+    app.use(cors({ origin: allowedOrigins }));
+  }
+
+  app.use((_req, res, next) => {
+    // No se sirve nada que deba interpretarse fuera de su tipo declarado, ni
+    // hay motivo para que esta app viva dentro de un iframe ajeno.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    // 'unsafe-inline' en style-src es por los atributos `style` de React; los
+    // scripts, en cambio, sólo pueden venir de este origen.
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+      ].join('; '),
+    );
+    next();
+  });
+
   app.use(express.json({ limit: '64kb' }));
   app.use((req, res, next) => {
     // Si la base no conecta, estas dos son las únicas que pueden explicar por
@@ -188,9 +232,61 @@ export function createApp(options: AppOptions = {}) {
     return req.header('x-admin-password') ?? undefined;
   }
 
+  /**
+   * Freno a la prueba de contraseñas.
+   *
+   * Cada fallo cuesta una espera fija y, pasados unos cuantos, ese cliente
+   * queda bloqueado un rato. En serverless el contador vive en la instancia,
+   * así que no es una barrera absoluta; la espera por fallo, en cambio, vale
+   * siempre y es lo que convierte "miles de intentos por minuto" en unos pocos.
+   */
+  const VENTANA_FALLOS_MS = 5 * 60_000;
+  const MAX_FALLOS = 10;
+  const ESPERA_POR_FALLO_MS = 400;
+  const fallos = new Map<string, { intentos: number; hasta: number }>();
+
+  function identificarCliente(req: Request): string {
+    const reenviado = req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    return reenviado || req.ip || 'desconocido';
+  }
+
+  /** Ejecuta una comprobación de contraseña con el freno puesto. */
+  async function conFreno<T>(req: Request, comprobar: () => T): Promise<T> {
+    const cliente = identificarCliente(req);
+    const estado = fallos.get(cliente);
+    const vigente = estado && Date.now() < estado.hasta ? estado : undefined;
+    if (vigente && vigente.intentos >= MAX_FALLOS) {
+      throw new ServiceError(429, 'Demasiados intentos fallidos. Esperá unos minutos.');
+    }
+    try {
+      const resultado = comprobar();
+      fallos.delete(cliente);
+      return resultado;
+    } catch (error) {
+      if (error instanceof ServiceError && error.status === 403) {
+        // El mapa se poda cuando crece: no debe convertirse en una fuga de
+        // memoria en un proceso de larga vida.
+        if (fallos.size > 1_000) {
+          for (const [clave, valor] of fallos) {
+            if (Date.now() >= valor.hasta) fallos.delete(clave);
+          }
+        }
+        fallos.set(cliente, {
+          intentos: (vigente?.intentos ?? 0) + 1,
+          hasta: Date.now() + VENTANA_FALLOS_MS,
+        });
+        await new Promise((resolve) => setTimeout(resolve, ESPERA_POR_FALLO_MS));
+      }
+      throw error;
+    }
+  }
+
   /** Acceso al panel de una sala: con su clave propia o con la contraseña general. */
-  function roomAdmin(req: Request) {
-    return service.requireAdmin(param(req, 'code'), adminKey(req), adminPasswordOf(req));
+  async function roomAdmin(req: Request) {
+    const room = await service.getRoomByCode(param(req, 'code'));
+    return conFreno(req, () =>
+      service.requireAdminOn(room, adminKey(req), adminPasswordOf(req)),
+    );
   }
 
   /** Sólo tiene efecto cuando hay un proceso persistente detrás. */
@@ -218,7 +314,7 @@ export function createApp(options: AppOptions = {}) {
     '/admin/session',
     route(async (req, res) => {
       const password = typeof req.body?.password === 'string' ? req.body.password : undefined;
-      service.requireMasterAdmin(password);
+      await conFreno(req, () => service.requireMasterAdmin(password));
       res.json({ ok: true });
     }),
   );
@@ -227,7 +323,7 @@ export function createApp(options: AppOptions = {}) {
   api.get(
     '/admin/rooms',
     route(async (req, res) => {
-      service.requireMasterAdmin(adminPasswordOf(req));
+      await conFreno(req, () => service.requireMasterAdmin(adminPasswordOf(req)));
       res.json({ rooms: await service.listRooms() });
     }),
   );
@@ -235,6 +331,13 @@ export function createApp(options: AppOptions = {}) {
   api.post(
     '/rooms',
     route(async (req, res) => {
+      // Crear clases es del docente. Antes cualquiera con la URL podía abrir
+      // salas sin límite en el despliegue: la contraseña ya estaba configurada,
+      // sólo que esta ruta no la miraba. Cuando no hay contraseña (desarrollo
+      // local, sin ADMIN_PASSWORD) se mantiene abierto: no hay nada que exigir.
+      if (service.masterAdminEnabled) {
+        await conFreno(req, () => service.requireMasterAdmin(adminPasswordOf(req)));
+      }
       const title = typeof req.body?.title === 'string' ? req.body.title : '';
       const { room, adminKey: key } = await service.createRoom(title);
       res.status(201).json({

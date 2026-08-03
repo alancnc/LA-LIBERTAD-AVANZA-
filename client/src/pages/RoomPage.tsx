@@ -1,17 +1,30 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, type BoardResponse } from '../api.js';
+import { api, type AskResponse, type BoardResponse } from '../api.js';
 import { useLive } from '../useLive.js';
 import { ClusterCard } from '../components/ClusterCard.js';
+import { Brand } from '../components/Brand.js';
 
 const NAME_STORAGE_KEY = 'preguntas-en-vivo:nombre';
+/** Igual que `MIN_AUTHOR_LENGTH` en el servidor: acá sólo evita el viaje de ida. */
+const MIN_NAME_LENGTH = 2;
+const MAX_NAME_LENGTH = 40;
+const MAX_TEXT_LENGTH = 400;
+
+/** Nombre con el que firma quien está usando este navegador. */
+function loadName(): string {
+  return localStorage.getItem(NAME_STORAGE_KEY)?.trim() ?? '';
+}
 
 export function RoomPage() {
   const { code = '' } = useParams();
   const [text, setText] = useState('');
-  const [author, setAuthor] = useState(() => localStorage.getItem(NAME_STORAGE_KEY) ?? '');
+  const [author, setAuthor] = useState(loadName);
+  // El nombre queda fijado recién cuando se confirma: hasta entonces la sala
+  // muestra el paso de identificación en lugar del formulario de preguntas.
+  const [identificado, setIdentificado] = useState(() => loadName().length >= MIN_NAME_LENGTH);
   const [sending, setSending] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [ultima, setUltima] = useState<AskResponse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -19,25 +32,47 @@ export function RoomPage() {
   const { data, error, loading, connected, refresh } = useLive<BoardResponse>(code, fetcher);
 
   const closed = data?.room.closed ?? false;
+  const nombreLimpio = author.trim().replace(/\s+/g, ' ');
+  const nombreValido = nombreLimpio.length >= MIN_NAME_LENGTH;
+
+  function confirmarNombre(event: FormEvent) {
+    event.preventDefault();
+    if (!nombreValido) {
+      setFormError('Escribí tu nombre para entrar a la clase');
+      return;
+    }
+    localStorage.setItem(NAME_STORAGE_KEY, nombreLimpio);
+    setAuthor(nombreLimpio);
+    setFormError(null);
+    setIdentificado(true);
+  }
+
+  function cambiarNombre() {
+    setIdentificado(false);
+    setUltima(null);
+    setFormError(null);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Se revalida acá porque el nombre puede haberse vaciado después de confirmarlo.
+    if (!nombreValido) {
+      setIdentificado(false);
+      setFormError('Ingresá tu nombre para poder preguntar');
+      return;
+    }
     if (text.trim().length < 3) {
       setFormError('Escribí un poco más para que se entienda la pregunta');
       return;
     }
     setSending(true);
     setFormError(null);
-    setFeedback(null);
+    setUltima(null);
     try {
-      const result = await api.ask(code, text, author);
-      localStorage.setItem(NAME_STORAGE_KEY, author);
+      const result = await api.ask(code, text, nombreLimpio);
+      localStorage.setItem(NAME_STORAGE_KEY, nombreLimpio);
       setText('');
-      setFeedback(
-        result.isNewCluster
-          ? 'Listo, tu pregunta abrió un tema nuevo.'
-          : `Ya había preguntas parecidas: la sumamos al tema "${result.clusterLabel}", así suma peso en el ranking.`,
-      );
+      setUltima(result);
       // Mostramos el grupo donde cayó para que se vea qué pasó con la pregunta.
       setExpanded((current) => new Set(current).add(result.clusterId));
       refresh();
@@ -66,12 +101,24 @@ export function RoomPage() {
     });
   }
 
-  if (loading) return <div className="page"><p className="muted">Cargando sala...</p></div>;
+  if (loading) {
+    return (
+      <div className="page">
+        <Brand subtitle="Preguntas en vivo" />
+        <p className="muted" style={{ marginTop: '2rem' }}>
+          Cargando la clase...
+        </p>
+      </div>
+    );
+  }
 
   if (error && !data) {
     return (
       <div className="page">
-        <div className="error">{error}</div>
+        <Brand subtitle="Preguntas en vivo" />
+        <div className="error" style={{ marginTop: '1.5rem' }}>
+          {error}
+        </div>
         <p style={{ marginTop: '1rem' }}>
           <Link to="/">Volver al inicio</Link>
         </p>
@@ -83,10 +130,11 @@ export function RoomPage() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>{data?.room.title}</h1>
+          <Brand subtitle={`Sala ${code}`} />
+          <h1 style={{ marginTop: '0.85rem' }}>{data?.room.title}</h1>
           <p className="header__sub">
             <span className={`live-dot${connected ? '' : ' live-dot--off'}`} />
-            Sala {code} {closed && '· cerrada'}
+            {closed ? 'Sala cerrada' : 'En vivo'}
           </p>
         </div>
       </header>
@@ -95,41 +143,79 @@ export function RoomPage() {
         <div className="notice" style={{ marginBottom: '1.25rem' }}>
           El docente cerró la sala. Ya no se aceptan preguntas ni votos.
         </div>
+      ) : !identificado ? (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>Antes de preguntar, ¿quién sos?</h2>
+          <p className="muted">
+            Las preguntas de esta clase van firmadas: no se aceptan preguntas anónimas. Tu nombre
+            queda guardado en este dispositivo, así lo escribís una sola vez.
+          </p>
+          <form onSubmit={confirmarNombre} className="stack">
+            <div>
+              <label className="label" htmlFor="nombre">
+                Nombre y apellido <span className="label__req">obligatorio</span>
+              </label>
+              <input
+                id="nombre"
+                value={author}
+                onChange={(event) => setAuthor(event.target.value)}
+                placeholder="Ej: Sofía Pérez"
+                maxLength={MAX_NAME_LENGTH}
+                autoComplete="name"
+                required
+                autoFocus
+              />
+            </div>
+            {formError && <div className="error">{formError}</div>}
+            <div className="row">
+              <button type="submit" className="btn btn--primary" disabled={!nombreValido}>
+                Entrar a preguntar
+              </button>
+            </div>
+          </form>
+        </div>
       ) : (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="row" style={{ marginBottom: '0.9rem' }}>
+            <span className="muted">
+              Preguntás como <strong className="question__author">{nombreLimpio}</strong>
+            </span>
+            <button type="button" className="btn btn--ghost btn--small" onClick={cambiarNombre}>
+              No soy yo
+            </button>
+          </div>
           <form onSubmit={handleSubmit} className="stack">
             <div>
               <label className="label" htmlFor="pregunta">
-                Tu pregunta
+                Tu pregunta <span className="label__req">obligatorio</span>
               </label>
               <textarea
                 id="pregunta"
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 placeholder="¿Qué no te quedó claro?"
-                maxLength={400}
+                maxLength={MAX_TEXT_LENGTH}
+                required
               />
               <p className="muted" style={{ margin: '0.3rem 0 0' }}>
-                {text.length}/400 · Si alguien ya preguntó lo mismo, tu pregunta se suma a ese
-                tema y lo empuja arriba en el ranking.
+                {text.length}/{MAX_TEXT_LENGTH} · Si alguien ya preguntó lo mismo, tu pregunta se
+                suma a ese tema y lo empuja arriba en el ranking.
               </p>
             </div>
-            <div>
-              <label className="label" htmlFor="nombre">
-                Tu nombre (opcional)
-              </label>
-              <input
-                id="nombre"
-                value={author}
-                onChange={(event) => setAuthor(event.target.value)}
-                placeholder="Anónimo"
-                maxLength={40}
-              />
-            </div>
             {formError && <div className="error">{formError}</div>}
-            {feedback && <div className="notice notice--success">{feedback}</div>}
+            {ultima && (
+              <div className="notice notice--success">
+                {ultima.isNewCluster
+                  ? 'Listo, tu pregunta abrió un tema nuevo.'
+                  : `Ya había preguntas parecidas: la sumamos al tema "${ultima.clusterLabel}", así suma peso en el ranking.`}
+              </div>
+            )}
             <div className="row">
-              <button type="submit" className="btn btn--primary" disabled={sending}>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={sending || text.trim().length < 3}
+              >
                 {sending ? 'Enviando...' : 'Enviar pregunta'}
               </button>
             </div>

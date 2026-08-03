@@ -43,7 +43,7 @@ export function ClusterCard({
   return (
     <article
       className={`cluster cluster--${cluster.status}${isTop ? ' cluster--top' : ''}`}
-      style={isMergeSource ? { outline: '2px dashed var(--accent)' } : undefined}
+      style={isMergeSource ? { outline: '2px dashed var(--primary)' } : undefined}
     >
       <div className="cluster__rank">
         <div className="cluster__score">{cluster.score}</div>

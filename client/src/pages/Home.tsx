@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { Brand } from '../components/Brand.js';
 
 /**
  * Portada.
@@ -38,7 +39,8 @@ export function Home() {
     <div className="page">
       <header className="header">
         <div>
-          <h1>Preguntas en vivo</h1>
+          <Brand subtitle="Misiones" />
+          <h1 style={{ marginTop: '0.85rem' }}>Preguntas en vivo</h1>
           <p className="header__sub">
             Mandá tu pregunta. Si alguien ya preguntó lo mismo, las juntamos y el tema sube en el
             ranking para que el docente lo responda antes.
@@ -86,6 +88,10 @@ export function Home() {
             votaron alguna de esas preguntas.
           </li>
           <li>Podés votar las preguntas de otros que también querés que se respondan.</li>
+          <li>
+            <strong>Las preguntas van firmadas.</strong> Para preguntar hay que poner el nombre: no
+            se aceptan preguntas anónimas.
+          </li>
         </ul>
       </div>
 

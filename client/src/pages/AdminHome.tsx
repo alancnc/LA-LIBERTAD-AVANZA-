@@ -9,6 +9,7 @@ import {
   saveAdminPassword,
   type RoomSummary,
 } from '../api.js';
+import { Brand } from '../components/Brand.js';
 
 /**
  * Área del docente: una contraseña, y desde ahí todas sus clases.
@@ -97,7 +98,8 @@ export function AdminHome() {
       <div className="page">
         <header className="header">
           <div>
-            <h1>Área del docente</h1>
+            <Brand subtitle="Misiones" />
+            <h1 style={{ marginTop: '0.85rem' }}>Área del docente</h1>
           </div>
         </header>
         <div className="card">
@@ -119,7 +121,8 @@ export function AdminHome() {
       <div className="page">
         <header className="header">
           <div>
-            <h1>Área del docente</h1>
+            <Brand subtitle="Misiones" />
+            <h1 style={{ marginTop: '0.85rem' }}>Área del docente</h1>
           </div>
         </header>
         <div className="card">
@@ -143,7 +146,8 @@ export function AdminHome() {
       <div className="page">
         <header className="header">
           <div>
-            <h1>Área del docente</h1>
+            <Brand subtitle="Misiones" />
+            <h1 style={{ marginTop: '0.85rem' }}>Área del docente</h1>
             <p className="header__sub">Sólo para vos. Los alumnos entran con el código de clase.</p>
           </div>
         </header>
@@ -181,7 +185,8 @@ export function AdminHome() {
     <div className="page page--wide">
       <header className="header">
         <div>
-          <h1>Mis clases</h1>
+          <Brand subtitle="Misiones" />
+          <h1 style={{ marginTop: '0.85rem' }}>Mis clases</h1>
           <p className="header__sub">Creá una clase y compartí el código con los alumnos.</p>
         </div>
         <button type="button" className="btn btn--small" onClick={salir}>

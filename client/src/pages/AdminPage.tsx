@@ -12,6 +12,7 @@ import {
 } from '../api.js';
 import { useLive } from '../useLive.js';
 import { ClusterCard } from '../components/ClusterCard.js';
+import { Brand } from '../components/Brand.js';
 
 type Filter = 'activas' | 'todas' | 'respondidas';
 
@@ -110,7 +111,8 @@ export function AdminPage() {
       <div className="page">
         <header className="header">
           <div>
-            <h1>Panel del docente</h1>
+            <Brand subtitle="Panel del docente" />
+            <h1 style={{ marginTop: '0.85rem' }}>Panel del docente</h1>
             <p className="header__sub">Sala {code}</p>
           </div>
         </header>
@@ -172,10 +174,11 @@ export function AdminPage() {
     <div className="page page--wide">
       <header className="header">
         <div>
-          <h1>{data?.room.title}</h1>
+          <Brand subtitle="Panel del docente" />
+          <h1 style={{ marginTop: '0.85rem' }}>{data?.room.title}</h1>
           <p className="header__sub">
             <span className={`live-dot${connected ? '' : ' live-dot--off'}`} />
-            Panel del docente {closed && '· sala cerrada'}
+            {closed ? 'Sala cerrada' : 'En vivo'}
           </p>
         </div>
         <div>
@@ -185,6 +188,15 @@ export function AdminPage() {
             <button type="button" className="btn btn--small" onClick={shareStudentLink}>
               {copied ? 'Enlace copiado' : 'Copiar enlace'}
             </button>
+            <a
+              href={`/p/${code}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn--small btn--ghost"
+              title="Pantalla para el proyector: código gigante y ranking en vivo"
+            >
+              Proyectar
+            </a>
             <Link to={`/r/${code}`} className="btn btn--small btn--ghost">
               Ver como alumno
             </Link>

@@ -15,7 +15,10 @@ import type {
 
 export const MAX_QUESTION_LENGTH = 400;
 export const MAX_AUTHOR_LENGTH = 40;
+export const MIN_AUTHOR_LENGTH = 2;
 export const MAX_TITLE_LENGTH = 120;
+/** Tope de preguntas por participante por minuto, contra ráfagas y bromas. */
+export const MAX_QUESTIONS_PER_MINUTE = 4;
 
 export class ServiceError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -192,7 +195,17 @@ export class Service {
     adminKey: string | undefined,
     masterPassword?: string,
   ): Promise<Room> {
-    const room = await this.getRoomByCode(code);
+    return this.requireAdminOn(await this.getRoomByCode(code), adminKey, masterPassword);
+  }
+
+  /**
+   * Igual que `requireAdmin`, pero sobre una sala ya leída.
+   *
+   * Existe para que quien tenga que contar los intentos fallidos pueda separar
+   * "no existe la sala" (404) de "la credencial no sirve" (403): con la sala ya
+   * en la mano, lo único que puede fallar acá es la credencial.
+   */
+  requireAdminOn(room: Room, adminKey: string | undefined, masterPassword?: string): Room {
     if (this.checkMasterPassword(masterPassword)) return room;
     if (!adminKey || !secretsMatch(adminKey, room.adminKey)) {
       throw new ServiceError(403, 'Clave de administrador inválida');
@@ -250,9 +263,24 @@ export class Service {
     if (text.length < 3) {
       throw new ServiceError(400, 'La pregunta es demasiado corta');
     }
-    const author = input.author.trim().slice(0, MAX_AUTHOR_LENGTH) || 'Anónimo';
+    // El nombre es obligatorio: cada pregunta lleva la firma de quien la hizo.
+    const author = input.author.trim().replace(/\s+/g, ' ').slice(0, MAX_AUTHOR_LENGTH);
+    if (author.length < MIN_AUTHOR_LENGTH) {
+      throw new ServiceError(400, 'Ingresá tu nombre para poder preguntar');
+    }
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
+
+    // Límite por participante, contado contra la base para que valga aunque la
+    // petición caiga en otra instancia serverless.
+    const { questions: existentes } = await this.repository.getBoardData(room.id);
+    const haceUnMinuto = Date.now() - 60_000;
+    const recientes = existentes.filter(
+      (question) => question.voterId === voterId && question.createdAt > haceUnMinuto,
+    ).length;
+    if (recientes >= MAX_QUESTIONS_PER_MINUTE) {
+      throw new ServiceError(429, 'Estás enviando preguntas muy seguido. Esperá un momento.');
+    }
 
     // Las dos consultas externas van en paralelo: una espera, no dos.
     const [embedding, preferredClusterId] = await Promise.all([

@@ -33,16 +33,25 @@ Hay dos áreas separadas.
 3. Ve el ranking actualizarse en vivo y responde de arriba hacia abajo, marcando
    cada tema como *respondiendo ahora* → *respondida*.
 
-Esa contraseña abre el panel de cualquier clase desde cualquier dispositivo.
-Cada clase tiene además una clave propia, que se genera al crearla y sirve para
-darle acceso a un ayudante sin entregarle el área completa.
+Esa contraseña abre el panel de cualquier clase desde cualquier dispositivo y es
+también la que habilita a crear clases. Cada clase tiene además una clave propia,
+que se genera al crearla y sirve para darle acceso a un ayudante sin entregarle
+el área completa.
+
+Desde el panel, el botón **Proyectar** abre `/p/CÓDIGO`: una pantalla pensada
+para el proyector, con el código en grande y el ranking en vivo, sin controles.
 
 **Alumnos — la portada, sin contraseña**
 
-1. Entran con el código, escriben la pregunta (el nombre es opcional).
-2. Si alguien ya preguntó lo mismo, la app avisa que se sumó a ese tema y lo
-   empuja arriba en el ranking.
+1. Entran con el código y ponen su nombre. **No hay preguntas anónimas**: el
+   nombre es obligatorio y queda guardado en ese dispositivo, así se escribe una
+   sola vez. Cada pregunta se muestra firmada.
+2. Escriben la pregunta. Si alguien ya preguntó lo mismo, la app avisa que se
+   sumó a ese tema y lo empuja arriba en el ranking.
 3. Pueden votar las preguntas de otros que también quieren que se respondan.
+
+Cada participante puede mandar hasta 4 preguntas por minuto; pasado ese tope la
+app le pide que espere, para que una ráfaga no ensucie el tablero.
 
 El puntaje de un tema es **cuánta gente lo quiere**: quienes lo preguntaron más
 quienes votaron alguna de esas preguntas.
@@ -133,6 +142,26 @@ completa, así que el build del cliente está armado para no depender de eso:
   CI (`.github/workflows/ci.yml`), que es donde corresponde: empaquetar y
   verificar tipos son cosas distintas, y un error de tipos no debería tirar
   abajo el despliegue de algo que funciona.
+
+### Seguridad de la aplicación
+
+- **Crear clases exige la contraseña del docente.** Sin eso, cualquiera con la
+  URL del despliegue podía abrir salas sin límite.
+- **Freno a la prueba de contraseñas.** Cada intento fallido cuesta 400 ms y, a
+  los 10 fallos, ese cliente queda cortado 5 minutos.
+- **Sin preguntas anónimas** y con un tope de 4 preguntas por minuto y
+  participante, contado contra la base para que valga aunque la petición caiga
+  en otra instancia serverless.
+- **Cabeceras**: `Content-Security-Policy` (scripts sólo del propio origen,
+  nada de iframes ajenos), `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` y `Permissions-Policy`.
+- **Sin CORS por defecto.** El cliente vive en el mismo origen que la API, así
+  que no hace falta; abrirlo sólo permitiría que otro sitio use esta API desde
+  el navegador de un tercero. Se habilita nombrando orígenes en
+  `ALLOWED_ORIGINS`.
+- **Secretos comparados en tiempo constante** (`timingSafeEqual`) y nunca
+  devueltos por la API: hay un test que recorre las respuestas y falla si
+  aparece una clave.
 
 ### Seguridad de la base
 
@@ -262,6 +291,7 @@ falla si un cambio empeora estas métricas.
 - **Renombrar** un tema y dejar una **nota** de cómo se respondió.
 - **Ocultar** una pregunta inapropiada (no se borra, queda para revisar).
 - Ajustar la sensibilidad del agrupamiento y cerrar la sala al terminar.
+- **Proyectar** la sala: código en grande y ranking en vivo, para el proyector.
 
 ## Estructura
 
@@ -280,8 +310,9 @@ server/                    API en Express + TypeScript
   src/app.ts               rutas HTTP, SSE y modo de tiempo real
   src/tools/calibrate.ts   medición del umbral
 client/                    React + Vite + TypeScript
-  src/pages/               inicio, vista de alumno, panel del docente
-  src/components/          tarjeta de tema del ranking
+  src/pages/               inicio, vista de alumno, panel del docente, proyección
+  src/components/          escudo institucional y tarjeta de tema del ranking
+  public/logo.png          escudo de la Escuela de Dirigentes (favicon y marca)
   src/useLive.ts           sincronización en vivo (SSE o sondeo, según el server)
 dist/                      build del cliente (generado)
 api/index.ts               función serverless de Vercel
@@ -309,24 +340,28 @@ api/index.ts               función serverless de Vercel
 
 - El control de acceso son dos secretos compartidos: la contraseña del área del
   docente y la clave de cada clase. Quien los tenga, entra. No hay cuentas,
-  roles ni auditoría, y tampoco límite de intentos: conviene una contraseña
-  larga.
+  roles ni auditoría: conviene una contraseña larga.
+- El freno a la fuerza bruta cuenta los fallos por IP **en la instancia que los
+  atendió**. En serverless hay varias, así que ese contador no es una barrera
+  absoluta; la espera de 400 ms por intento fallido, en cambio, se aplica
+  siempre y es lo que baja el techo de miles de pruebas por minuto a unas pocas.
+- El nombre del alumno es obligatorio, pero no está verificado: nadie comprueba
+  que sea el suyo. Sirve para que las preguntas queden firmadas ante la clase,
+  no como identidad.
 - Con archivo JSON el estado vive en un solo proceso y no escala en horizontal;
   para eso está el repositorio Postgres.
-- Sin límite de frecuencia por participante: en un aula abierta a internet
-  convendría agregar rate limiting antes de exponerlo.
 - El sondeo de 4 segundos consume invocaciones en Vercel. Para una clase es
   irrelevante, pero conviene tenerlo en cuenta con muchas salas simultáneas.
 
 ## Tests
 
 ```bash
-npm test         # 134 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 136 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 
 Definiendo `TEST_DATABASE_URL` la misma batería corre además contra Postgres y
-se suman los tests de concurrencia y de seguridad de la base (164 en total):
+se suman los tests de concurrencia y de seguridad de la base:
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/preguntas_test npm test
