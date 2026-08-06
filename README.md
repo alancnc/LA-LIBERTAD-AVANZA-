@@ -330,6 +330,9 @@ falla si un cambio empeora estas métricas.
 - **Proyectar** la sala: código en grande y ranking en vivo, para el proyector.
 - **Preguntarle a la clase**: lanzar una consigna, ver las respuestas llegar,
   cerrarla, ocultar una respuesta o borrarla con todo lo que juntó.
+- **Sorteo** del orden de exposición entre los profesores: se cargan los
+  nombres y sale el orden completo. Es una herramienta interna del equipo, no
+  toca el servidor y los nombres quedan sólo en ese navegador.
 - **Eliminar una clase** que ya no se usa, con todo lo que juntó. Pide
   confirmación mostrando cuántas preguntas se pierden, y exige la contraseña
   del docente: la clave de una sala sirve para moderarla, no para borrarla.
@@ -355,6 +358,7 @@ client/                    React + Vite + TypeScript
   src/components/          escudo, tarjeta del ranking y consigna del docente
   public/logo.png          escudo de la Escuela de Dirigentes (favicon y marca)
   src/useLive.ts           sincronización en vivo (SSE o sondeo, según el server)
+  src/sorteo.ts            sorteo del orden de exposición (barajado sin sesgo)
 dist/                      build del cliente (generado)
 api/index.ts               función serverless de Vercel
 ```
@@ -397,7 +401,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 158 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 170 tests: agrupamiento, significado, calidad, API, acceso y sorteo
 npm run typecheck
 ```
 

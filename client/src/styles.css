@@ -794,6 +794,271 @@ textarea {
   opacity: 1;
 }
 
+/* ------------------------------------------ sorteo del orden de exposición */
+
+.sorteo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(120, 90, 210, 0.55), transparent 60%),
+    linear-gradient(160deg, #1c0f3d 0%, var(--primary-strong) 55%, #4a3486 100%);
+  color: #fff;
+  animation: sorteo-entrar 0.25s ease-out;
+}
+
+@keyframes sorteo-entrar {
+  from {
+    opacity: 0;
+  }
+}
+
+.sorteo__caja {
+  width: min(46rem, 100%);
+  text-align: center;
+  margin: auto;
+}
+
+.sorteo__logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 16px;
+  padding: 7px;
+}
+
+.sorteo__cerrar {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.sorteo__cerrar:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.sorteo__eyebrow {
+  margin: 0.9rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.sorteo__titulo {
+  margin: 0.4rem 0 1.6rem;
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-weight: 800;
+}
+
+/* -------- carga de nombres */
+
+.sorteo__lista {
+  list-style: none;
+  margin: 0 0 1.4rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.sorteo__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+  transition: transform 0.08s, background 0.08s;
+}
+
+/* El que parpadea mientras gira la ruleta. */
+.sorteo__chip--activo {
+  background: #fff;
+  border-color: #fff;
+  color: var(--primary-strong);
+  transform: scale(1.12);
+}
+
+.sorteo__quitar {
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 0.8rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.sorteo__quitar:hover {
+  opacity: 1;
+}
+
+.sorteo__form {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 26rem;
+  margin: 0 auto 1.2rem;
+}
+
+.sorteo__form input {
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+  border-color: transparent;
+}
+
+.sorteo__form input:focus {
+  outline-color: #fff;
+  border-color: #fff;
+}
+
+.sorteo__acciones {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.sorteo .btn {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+.sorteo .btn:hover:not(:disabled) {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.sorteo .btn--primary,
+.sorteo .btn--primary:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
+  color: var(--primary-strong);
+}
+
+.sorteo__boton {
+  padding: 0.75rem 2.4rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.sorteo__ayuda,
+.sorteo__nota {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  max-width: 32rem;
+  margin: 1.2rem auto 0;
+}
+
+.sorteo__nota {
+  margin-top: 2rem;
+  font-size: 0.78rem;
+  opacity: 0.55;
+}
+
+/* -------- resultado */
+
+.sorteo__etiqueta {
+  margin: 1.4rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  animation: sorteo-subir 0.4s ease-out both;
+}
+
+.sorteo__ganador {
+  margin: 0.5rem 0 0;
+  font-size: clamp(2.2rem, 8vw, 4.6rem);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 60px rgba(255, 255, 255, 0.45);
+  animation: sorteo-revelar 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes sorteo-revelar {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+    filter: blur(8px);
+  }
+}
+
+@keyframes sorteo-subir {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.sorteo__orden {
+  list-style: none;
+  margin: 2rem auto 1.6rem;
+  padding: 1.2rem 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  max-width: 26rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sorteo__puesto {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  animation: sorteo-subir 0.4s ease-out both;
+}
+
+.sorteo__numero {
+  flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+/* Quien pidió menos movimiento no tiene por qué sufrir la ruleta. */
+@media (prefers-reduced-motion: reduce) {
+  .sorteo,
+  .sorteo__ganador,
+  .sorteo__etiqueta,
+  .sorteo__puesto {
+    animation: none;
+  }
+}
+
 /* -------------------------------------------------- pantalla de proyección */
 
 .projection {

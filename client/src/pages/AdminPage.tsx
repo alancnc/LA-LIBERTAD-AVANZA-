@@ -14,6 +14,7 @@ import { useLive } from '../useLive.js';
 import { ClusterCard } from '../components/ClusterCard.js';
 import { Brand } from '../components/Brand.js';
 import { PromptPanel } from '../components/PromptPanel.js';
+import { SorteoPanel } from '../components/SorteoPanel.js';
 
 type Filter = 'activas' | 'todas' | 'respondidas';
 
@@ -41,6 +42,7 @@ export function AdminPage() {
   const [mergeSource, setMergeSource] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('activas');
   const [copied, setCopied] = useState(false);
+  const [sorteoAbierto, setSorteoAbierto] = useState(false);
 
   const fetcher = useCallback(
     () => api.getAdminBoard(code, adminKey ?? ''),
@@ -173,6 +175,8 @@ export function AdminPage() {
 
   return (
     <div className="page page--wide">
+      {sorteoAbierto && <SorteoPanel onClose={() => setSorteoAbierto(false)} />}
+
       <header className="header">
         <div>
           <Brand subtitle="Panel del docente" />
@@ -201,6 +205,16 @@ export function AdminPage() {
             <Link to={`/r/${code}`} className="btn btn--small btn--ghost">
               Ver como alumno
             </Link>
+            {/* Herramienta interna del equipo docente: no toca el servidor ni
+                aparece en ninguna pantalla que vea un alumno. */}
+            <button
+              type="button"
+              className="btn btn--small btn--ghost"
+              onClick={() => setSorteoAbierto(true)}
+              title="Sortear el orden de exposición entre los profesores"
+            >
+              Sorteo
+            </button>
             {conContrasena && (
               <Link to="/admin" className="btn btn--small btn--ghost">
                 Mis clases
