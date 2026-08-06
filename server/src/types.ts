@@ -44,10 +44,42 @@ export interface Cluster {
   answeredAt: number | null;
 }
 
+/**
+ * Consigna: una pregunta que lanza el docente para que la clase responda.
+ *
+ * Es el sentido inverso al del resto de la app. Las preguntas de los alumnos se
+ * agrupan porque son muchas versiones de lo mismo y hay que reducirlas; una
+ * consigna es una sola y lo que interesa es la variedad de lo que contesta cada
+ * uno, así que las respuestas no se agrupan: se muestran todas.
+ */
+export interface Prompt {
+  id: string;
+  roomId: string;
+  text: string;
+  /** Cerrada: queda en pantalla pero ya no admite respuestas nuevas. */
+  closed: boolean;
+  createdAt: number;
+  closedAt: number | null;
+}
+
+export interface Answer {
+  id: string;
+  promptId: string;
+  roomId: string;
+  text: string;
+  author: string;
+  /** Id anónimo del navegador. Hay una sola respuesta por persona y consigna. */
+  voterId: string;
+  createdAt: number;
+  hidden: boolean;
+}
+
 export interface Database {
   rooms: Room[];
   clusters: Cluster[];
   questions: Question[];
+  prompts: Prompt[];
+  answers: Answer[];
 }
 
 /** Grupo de preguntas ya rankeado, tal como lo consumen el tablero y el panel admin. */
@@ -78,4 +110,45 @@ export interface PublicQuestion {
   votedByMe: boolean;
   /** true si el visitante actual es quien la escribió. */
   mine: boolean;
+}
+
+export interface PublicAnswer {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: number;
+  /** true si el visitante actual es quien la escribió. */
+  mine: boolean;
+}
+
+/** La consigna vigente, tal como la ve un alumno. */
+export interface LivePrompt {
+  id: string;
+  text: string;
+  closed: boolean;
+  createdAt: number;
+  /** Cuántas personas respondieron. Visible siempre, aun sin haber respondido. */
+  answerCount: number;
+  /** Lo que respondió el visitante, o null si todavía no respondió. */
+  myAnswer: string | null;
+  /**
+   * Las respuestas de los demás.
+   *
+   * Llega vacío hasta que el visitante responde: si viera las respuestas ajenas
+   * antes de escribir la suya, la consigna dejaría de medir lo que piensa la
+   * clase y pasaría a medir lo que copió del primero que contestó. Con la
+   * consigna cerrada se muestran a todos, hayan respondido o no.
+   */
+  answers: PublicAnswer[];
+}
+
+/** La consigna con todo lo que respondieron, para el panel del docente. */
+export interface AdminPrompt {
+  id: string;
+  text: string;
+  closed: boolean;
+  createdAt: number;
+  closedAt: number | null;
+  answerCount: number;
+  answers: PublicAnswer[];
 }

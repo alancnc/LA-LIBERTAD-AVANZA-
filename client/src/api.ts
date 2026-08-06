@@ -39,13 +39,46 @@ export interface RoomStats {
   participants: number;
 }
 
+export interface PublicAnswer {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: number;
+  mine: boolean;
+}
+
+/** La pregunta que el docente le lanzó a la clase, tal como la ve un alumno. */
+export interface LivePrompt {
+  id: string;
+  text: string;
+  closed: boolean;
+  createdAt: number;
+  answerCount: number;
+  /** Lo que respondió este navegador, o null si todavía no respondió. */
+  myAnswer: string | null;
+  /** Vacío hasta que uno responde: no se ven las respuestas ajenas antes. */
+  answers: PublicAnswer[];
+}
+
+export interface AdminPrompt {
+  id: string;
+  text: string;
+  closed: boolean;
+  createdAt: number;
+  closedAt: number | null;
+  answerCount: number;
+  answers: PublicAnswer[];
+}
+
 export interface BoardResponse {
   room: RoomInfo;
   clusters: RankedCluster[];
+  prompt: LivePrompt | null;
 }
 
 export interface AdminResponse extends BoardResponse {
   stats: RoomStats;
+  prompts: AdminPrompt[];
 }
 
 /** Una sala en el listado del panel general del docente. */
@@ -174,6 +207,33 @@ export const api = {
       `/rooms/${code}/questions/${questionId}/vote`,
     ),
 
+  /** El docente lanza una pregunta para que la responda la clase. */
+  createPrompt: (code: string, text: string, adminKey: string) =>
+    call<{ id: string; text: string; closed: boolean }>('POST', `/rooms/${code}/prompts`, {
+      body: { text },
+      adminKey,
+    }),
+
+  setPromptClosed: (code: string, promptId: string, closed: boolean, adminKey: string) =>
+    call<{ id: string; closed: boolean }>('PATCH', `/rooms/${code}/prompts/${promptId}`, {
+      body: { closed },
+      adminKey,
+    }),
+
+  deletePrompt: (code: string, promptId: string, adminKey: string) =>
+    call<void>('DELETE', `/rooms/${code}/prompts/${promptId}`, { adminKey }),
+
+  /** Responder de nuevo reemplaza la respuesta anterior de esta persona. */
+  answerPrompt: (code: string, promptId: string, text: string, author: string) =>
+    call<{ id: string; text: string; author: string }>(
+      'POST',
+      `/rooms/${code}/prompts/${promptId}/answers`,
+      { body: { text, author } },
+    ),
+
+  hideAnswer: (code: string, answerId: string, adminKey: string) =>
+    call<{ ok: true }>('POST', `/rooms/${code}/answers/${answerId}/hide`, { adminKey }),
+
   hideQuestion: (code: string, questionId: string, adminKey: string) =>
     call<{ ok: true }>('POST', `/rooms/${code}/questions/${questionId}/hide`, { adminKey }),
 
@@ -241,7 +301,7 @@ export function getConfig(): Promise<{ realtime: RealtimeMode; masterAdmin: bool
  */
 export function listenToRoom(code: string, onChange: () => void): () => void {
   const source = new EventSource(`/api/rooms/${code}/stream`);
-  for (const event of ['question', 'vote', 'cluster', 'room']) {
+  for (const event of ['question', 'vote', 'cluster', 'room', 'prompt', 'answer']) {
     source.addEventListener(event, onChange);
   }
   return () => source.close();

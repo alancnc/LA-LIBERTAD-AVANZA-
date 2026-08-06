@@ -13,6 +13,7 @@ import {
 import { useLive } from '../useLive.js';
 import { ClusterCard } from '../components/ClusterCard.js';
 import { Brand } from '../components/Brand.js';
+import { PromptPanel } from '../components/PromptPanel.js';
 
 type Filter = 'activas' | 'todas' | 'respondidas';
 
@@ -235,6 +236,14 @@ export function AdminPage() {
       )}
 
       {actionError && <div className="error" style={{ marginBottom: '1rem' }}>{actionError}</div>}
+
+      <PromptPanel
+        code={code}
+        adminKey={adminKey ?? ''}
+        prompts={data?.prompts ?? []}
+        roomClosed={closed}
+        onChange={refresh}
+      />
 
       {mergeSource && (
         <div className="notice" style={{ marginBottom: '1rem' }}>

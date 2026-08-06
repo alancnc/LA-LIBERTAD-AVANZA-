@@ -1,11 +1,12 @@
 import pg from 'pg';
 import { newId } from '../ids.js';
-import type { Cluster, ClusterStatus, Question, Room } from '../types.js';
+import type { Answer, Cluster, ClusterStatus, Prompt, Question, Room } from '../types.js';
 import type {
   BoardData,
   ClusterWithTexts,
   CreatedQuestion,
   CreateQuestionInput,
+  PromptData,
   Repository,
 } from './types.js';
 
@@ -56,6 +57,31 @@ CREATE TABLE IF NOT EXISTS votes (
   PRIMARY KEY (question_id, voter_id)
 );
 
+-- Consignas del docente: preguntas que lanza para que responda la clase.
+CREATE TABLE IF NOT EXISTS prompts (
+  id          TEXT PRIMARY KEY,
+  room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  text        TEXT NOT NULL,
+  closed      BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at  BIGINT NOT NULL,
+  closed_at   BIGINT
+);
+
+-- Una respuesta por persona y consigna: la unicidad la garantiza el índice, no
+-- la lógica de la aplicación. Volver a responder pisa la anterior.
+CREATE TABLE IF NOT EXISTS answers (
+  id          TEXT PRIMARY KEY,
+  prompt_id   TEXT NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+  room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  text        TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  voter_id    TEXT NOT NULL,
+  created_at  BIGINT NOT NULL,
+  hidden      BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS answers_prompt_voter_idx ON answers(prompt_id, voter_id);
+
 -- Vector del texto para la comparación semántica. Se guarda como JSON: son
 -- unos pocos cientos de números por pregunta y el volumen no justifica una
 -- extensión como pgvector, que además no está en todos los proveedores.
@@ -64,6 +90,8 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS embedding TEXT;
 CREATE INDEX IF NOT EXISTS clusters_room_idx  ON clusters(room_id);
 CREATE INDEX IF NOT EXISTS questions_room_idx ON questions(room_id);
 CREATE INDEX IF NOT EXISTS questions_cluster_idx ON questions(cluster_id);
+CREATE INDEX IF NOT EXISTS prompts_room_idx ON prompts(room_id);
+CREATE INDEX IF NOT EXISTS answers_room_idx ON answers(room_id);
 
 -- Row Level Security sin políticas: nadie llega a estas tablas salvo su dueño.
 --
@@ -79,6 +107,8 @@ ALTER TABLE rooms     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clusters  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE votes     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prompts   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE answers   ENABLE ROW LEVEL SECURITY;
 
 -- Además de RLS, se quitan los permisos que Supabase concede por defecto a sus
 -- roles públicos. Los roles sólo existen ahí, así que se comprueba antes para
@@ -89,7 +119,9 @@ DECLARE
 BEGIN
   FOREACH rol IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = rol) THEN
-      EXECUTE format('REVOKE ALL ON rooms, clusters, questions, votes FROM %I', rol);
+      EXECUTE format(
+        'REVOKE ALL ON rooms, clusters, questions, votes, prompts, answers FROM %I', rol
+      );
     END IF;
   END LOOP;
 END $$;
@@ -126,6 +158,50 @@ interface QuestionRow {
   hidden: boolean;
   upvotes: string[] | null;
   embedding: string | null;
+}
+
+interface PromptRow {
+  id: string;
+  room_id: string;
+  text: string;
+  closed: boolean;
+  created_at: string;
+  closed_at: string | null;
+}
+
+interface AnswerRow {
+  id: string;
+  prompt_id: string;
+  room_id: string;
+  text: string;
+  author: string;
+  voter_id: string;
+  created_at: string;
+  hidden: boolean;
+}
+
+function toPrompt(row: PromptRow): Prompt {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    text: row.text,
+    closed: row.closed,
+    createdAt: Number(row.created_at),
+    closedAt: row.closed_at === null ? null : Number(row.closed_at),
+  };
+}
+
+function toAnswer(row: AnswerRow): Answer {
+  return {
+    id: row.id,
+    promptId: row.prompt_id,
+    roomId: row.room_id,
+    text: row.text,
+    author: row.author,
+    voterId: row.voter_id,
+    createdAt: Number(row.created_at),
+    hidden: row.hidden,
+  };
 }
 
 function toRoom(row: RoomRow): Room {
@@ -617,6 +693,124 @@ export class PostgresRepository implements Repository {
     return {
       clusters: clusters.rows.map(toCluster),
       questions: questions.rows.map(toQuestion),
+    };
+  }
+
+  // ------------------------------------------------- consignas del docente
+
+  /**
+   * Inserta la consigna y cierra la anterior en la misma transacción.
+   *
+   * Si fueran dos operaciones sueltas, dos pedidos simultáneos podrían dejar
+   * dos consignas abiertas a la vez, y la pantalla del alumno muestra una sola.
+   */
+  async createPrompt(prompt: Prompt): Promise<Prompt> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM rooms WHERE id = $1 FOR UPDATE', [prompt.roomId]);
+      await client.query(
+        'UPDATE prompts SET closed = TRUE, closed_at = $2 WHERE room_id = $1 AND closed = FALSE',
+        [prompt.roomId, Date.now()],
+      );
+      await client.query(
+        `INSERT INTO prompts (id, room_id, text, closed, created_at, closed_at)
+         VALUES ($1, $2, $3, FALSE, $4, NULL)`,
+        [prompt.id, prompt.roomId, prompt.text, prompt.createdAt],
+      );
+      await client.query('COMMIT');
+      return prompt;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getPrompt(roomId: string, promptId: string): Promise<Prompt | null> {
+    const result = await this.pool.query<PromptRow>(
+      'SELECT * FROM prompts WHERE id = $1 AND room_id = $2',
+      [promptId, roomId],
+    );
+    return result.rows[0] ? toPrompt(result.rows[0]) : null;
+  }
+
+  async updatePrompt(
+    roomId: string,
+    promptId: string,
+    changes: { closed?: boolean },
+  ): Promise<Prompt> {
+    const cerrada = changes.closed;
+    const result = await this.pool.query<PromptRow>(
+      `UPDATE prompts SET
+         closed    = COALESCE($3, closed),
+         closed_at = CASE WHEN $3 IS NULL THEN closed_at WHEN $3 THEN $4 ELSE NULL END
+       WHERE id = $1 AND room_id = $2
+       RETURNING *`,
+      [promptId, roomId, cerrada ?? null, Date.now()],
+    );
+    if (!result.rows[0]) throw new Error('Consigna inexistente');
+    return toPrompt(result.rows[0]);
+  }
+
+  async deletePrompt(roomId: string, promptId: string): Promise<void> {
+    // Las respuestas se van solas por el ON DELETE CASCADE de answers.prompt_id.
+    const result = await this.pool.query(
+      'DELETE FROM prompts WHERE id = $1 AND room_id = $2',
+      [promptId, roomId],
+    );
+    if (!result.rowCount) throw new Error('Consigna inexistente');
+  }
+
+  /**
+   * Guarda la respuesta, pisando la anterior de esa misma persona.
+   *
+   * El conflicto lo resuelve el índice único (prompt_id, voter_id), así que dos
+   * envíos simultáneos del mismo participante terminan en una sola fila en vez
+   * de en dos respuestas suyas contadas por separado.
+   */
+  async saveAnswer(answer: Answer): Promise<Answer> {
+    const result = await this.pool.query<AnswerRow>(
+      `INSERT INTO answers
+         (id, prompt_id, room_id, text, author, voter_id, created_at, hidden)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
+       ON CONFLICT (prompt_id, voter_id) DO UPDATE
+         SET text = EXCLUDED.text, author = EXCLUDED.author, hidden = FALSE
+       RETURNING *`,
+      [
+        answer.id,
+        answer.promptId,
+        answer.roomId,
+        answer.text,
+        answer.author,
+        answer.voterId,
+        answer.createdAt,
+      ],
+    );
+    return toAnswer(result.rows[0]!);
+  }
+
+  async hideAnswer(roomId: string, answerId: string): Promise<void> {
+    const result = await this.pool.query(
+      'UPDATE answers SET hidden = TRUE WHERE id = $1 AND room_id = $2',
+      [answerId, roomId],
+    );
+    if (!result.rowCount) throw new Error('Respuesta inexistente');
+  }
+
+  async getPromptData(roomId: string): Promise<PromptData> {
+    const prompts = await this.pool.query<PromptRow>(
+      'SELECT * FROM prompts WHERE room_id = $1 ORDER BY created_at DESC',
+      [roomId],
+    );
+    const answers = await this.pool.query<AnswerRow>(
+      'SELECT * FROM answers WHERE room_id = $1 AND hidden = FALSE ORDER BY created_at',
+      [roomId],
+    );
+    return {
+      prompts: prompts.rows.map(toPrompt),
+      answers: answers.rows.map(toAnswer),
     };
   }
 

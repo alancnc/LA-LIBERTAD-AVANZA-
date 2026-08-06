@@ -387,9 +387,16 @@ export function createApp(options: AppOptions = {}) {
     '/rooms/:code/board',
     route(async (req, res) => {
       const room = await service.getRoomByCode(param(req, 'code'));
+      const viewer = viewerId(req);
+      const [clusters, prompt] = await Promise.all([
+        service.getBoard(room, viewer),
+        service.getLivePrompt(room, viewer),
+      ]);
       res.json({
         room: { code: room.code, title: room.title, closed: room.closed },
-        clusters: await service.getBoard(room, viewerId(req)),
+        clusters,
+        // La consigna vigente del docente, o null si no lanzó ninguna.
+        prompt,
       });
     }),
   );
@@ -408,6 +415,7 @@ export function createApp(options: AppOptions = {}) {
         },
         stats: await service.getStats(room),
         clusters: await service.getBoard(room, viewerId(req)),
+        prompts: await service.getPromptsForAdmin(room),
       });
     }),
   );
@@ -439,6 +447,81 @@ export function createApp(options: AppOptions = {}) {
         clearInterval(keepAlive);
         unsubscribe();
       });
+    }),
+  );
+
+  // ------------------------------------------ consignas: el docente pregunta
+
+  /** El docente lanza una pregunta para que la responda la clase. */
+  api.post(
+    '/rooms/:code/prompts',
+    route(async (req, res) => {
+      const room = await roomAdmin(req);
+      const prompt = await service.createPrompt(
+        room,
+        typeof req.body?.text === 'string' ? req.body.text : '',
+      );
+      notify(room.id, 'prompt');
+      res.status(201).json({
+        id: prompt.id,
+        text: prompt.text,
+        closed: prompt.closed,
+        createdAt: prompt.createdAt,
+      });
+    }),
+  );
+
+  /** Abrir o cerrar la consigna a respuestas nuevas. */
+  api.patch(
+    '/rooms/:code/prompts/:promptId',
+    route(async (req, res) => {
+      const room = await roomAdmin(req);
+      if (typeof req.body?.closed !== 'boolean') {
+        throw new ServiceError(400, 'Falta indicar si la pregunta queda abierta o cerrada');
+      }
+      const prompt = await service.setPromptClosed(room, param(req, 'promptId'), req.body.closed);
+      notify(room.id, 'prompt');
+      res.json({
+        id: prompt.id,
+        text: prompt.text,
+        closed: prompt.closed,
+        createdAt: prompt.createdAt,
+      });
+    }),
+  );
+
+  api.delete(
+    '/rooms/:code/prompts/:promptId',
+    route(async (req, res) => {
+      const room = await roomAdmin(req);
+      await service.deletePrompt(room, param(req, 'promptId'));
+      notify(room.id, 'prompt');
+      res.status(204).end();
+    }),
+  );
+
+  /** Un alumno responde la consigna. Volver a enviar reemplaza su respuesta. */
+  api.post(
+    '/rooms/:code/prompts/:promptId/answers',
+    route(async (req, res) => {
+      const room = await service.getRoomByCode(param(req, 'code'));
+      const answer = await service.answerPrompt(room, param(req, 'promptId'), {
+        text: typeof req.body?.text === 'string' ? req.body.text : '',
+        author: typeof req.body?.author === 'string' ? req.body.author : '',
+        voterId: viewerId(req),
+      });
+      notify(room.id, 'answer');
+      res.status(201).json({ id: answer.id, text: answer.text, author: answer.author });
+    }),
+  );
+
+  api.post(
+    '/rooms/:code/answers/:answerId/hide',
+    route(async (req, res) => {
+      const room = await roomAdmin(req);
+      await service.hideAnswer(room, param(req, 'answerId'));
+      notify(room.id, 'answer');
+      res.json({ ok: true });
     }),
   );
 

@@ -280,6 +280,226 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     });
   });
 
+  describe('el docente pregunta y la clase responde', () => {
+    /** Lanza una consigna con la clave de la sala. */
+    async function lanzar(room: { code: string; adminKey: string }, text: string) {
+      const response = await request(app)
+        .post(`/api/rooms/${room.code}/prompts`)
+        .set('x-admin-key', room.adminKey)
+        .send({ text });
+      expect(response.status).toBe(201);
+      return response.body as { id: string; text: string; closed: boolean };
+    }
+
+    function responder(code: string, promptId: string, viewer: string, text: string, author = 'Alumno') {
+      return request(app)
+        .post(`/api/rooms/${code}/prompts/${promptId}/answers`)
+        .set('x-viewer-id', viewer)
+        .send({ text, author });
+    }
+
+    function tablero(code: string, viewer: string) {
+      return request(app).get(`/api/rooms/${code}/board`).set('x-viewer-id', viewer);
+    }
+
+    it('lanza una pregunta y la clase la ve en su tablero', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+
+      const board = await tablero(room.code, 'alumna');
+      expect(board.body.prompt.id).toBe(prompt.id);
+      expect(board.body.prompt.text).toBe('¿Qué entienden por república?');
+      expect(board.body.prompt.closed).toBe(false);
+      expect(board.body.prompt.myAnswer).toBeNull();
+    });
+
+    it('sin consigna lanzada, el tablero no trae ninguna', async () => {
+      const room = await createRoom();
+      const board = await tablero(room.code, 'alumna');
+      expect(board.body.prompt).toBeNull();
+    });
+
+    it('un alumno no puede lanzar preguntas a la clase', async () => {
+      const room = await createRoom();
+      const response = await request(app)
+        .post(`/api/rooms/${room.code}/prompts`)
+        .send({ text: '¿Se puede ir antes?' });
+      expect(response.status).toBe(403);
+    });
+
+    it('guarda la respuesta firmada con el nombre de quien la escribió', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+
+      const enviada = await responder(
+        room.code,
+        prompt.id,
+        'v1',
+        'La división de poderes',
+        'Sofía Pérez',
+      );
+      expect(enviada.status).toBe(201);
+
+      const board = await tablero(room.code, 'v1');
+      expect(board.body.prompt.myAnswer).toBe('La división de poderes');
+      expect(board.body.prompt.answers[0].author).toBe('Sofía Pérez');
+      expect(board.body.prompt.answers[0].mine).toBe(true);
+    });
+
+    it('no acepta respuestas anónimas', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      const response = await responder(room.code, prompt.id, 'v1', 'Algo', '  ');
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/nombre/i);
+    });
+
+    it('no muestra lo que contestaron los demás hasta haber contestado', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await responder(room.code, prompt.id, 'v1', 'La división de poderes', 'Sofía');
+
+      // Quien todavía no respondió ve cuántos van, pero no qué dijeron: si no,
+      // la consigna mide quién copió primero en lugar de qué piensa la clase.
+      const mirando = await tablero(room.code, 'v2');
+      expect(mirando.body.prompt.answerCount).toBe(1);
+      expect(mirando.body.prompt.answers).toEqual([]);
+
+      await responder(room.code, prompt.id, 'v2', 'Que se vota', 'Bruno');
+      const yaRespondio = await tablero(room.code, 'v2');
+      expect(yaRespondio.body.prompt.answers).toHaveLength(2);
+    });
+
+    it('con la consigna cerrada las respuestas quedan a la vista de todos', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await responder(room.code, prompt.id, 'v1', 'La división de poderes', 'Sofía');
+
+      await request(app)
+        .patch(`/api/rooms/${room.code}/prompts/${prompt.id}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ closed: true });
+
+      const mirando = await tablero(room.code, 'v2');
+      expect(mirando.body.prompt.closed).toBe(true);
+      expect(mirando.body.prompt.answers).toHaveLength(1);
+
+      const tarde = await responder(room.code, prompt.id, 'v2', 'Llego tarde', 'Bruno');
+      expect(tarde.status).toBe(409);
+    });
+
+    it('volver a responder corrige la respuesta en lugar de duplicarla', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await responder(room.code, prompt.id, 'v1', 'La divison de poderes', 'Sofía');
+      await responder(room.code, prompt.id, 'v1', 'La división de poderes', 'Sofía');
+
+      const board = await tablero(room.code, 'v1');
+      expect(board.body.prompt.answerCount).toBe(1);
+      expect(board.body.prompt.myAnswer).toBe('La división de poderes');
+    });
+
+    it('lanzar una pregunta nueva cierra la anterior', async () => {
+      const room = await createRoom();
+      const primera = await lanzar(room, '¿Qué entienden por república?');
+      const segunda = await lanzar(room, '¿Y por democracia?');
+
+      // El alumno ve la nueva; la anterior ya no acepta respuestas.
+      const board = await tablero(room.code, 'v1');
+      expect(board.body.prompt.id).toBe(segunda.id);
+
+      const tarde = await responder(room.code, primera.id, 'v1', 'Tarde', 'Sofía');
+      expect(tarde.status).toBe(409);
+    });
+
+    it('el panel del docente muestra todas las respuestas', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await responder(room.code, prompt.id, 'v1', 'La división de poderes', 'Sofía');
+      await responder(room.code, prompt.id, 'v2', 'Que se vota', 'Bruno');
+
+      const panel = await request(app)
+        .get(`/api/rooms/${room.code}/admin`)
+        .set('x-admin-key', room.adminKey);
+
+      expect(panel.body.prompts).toHaveLength(1);
+      expect(panel.body.prompts[0].answerCount).toBe(2);
+      expect(panel.body.prompts[0].answers.map((a: { author: string }) => a.author)).toEqual([
+        'Sofía',
+        'Bruno',
+      ]);
+    });
+
+    it('el docente puede ocultar una respuesta y borrar la consigna', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await responder(room.code, prompt.id, 'v1', 'Una barbaridad', 'Anónimo Molesto');
+
+      const panel = await request(app)
+        .get(`/api/rooms/${room.code}/admin`)
+        .set('x-admin-key', room.adminKey);
+      const answerId = panel.body.prompts[0].answers[0].id;
+
+      const oculta = await request(app)
+        .post(`/api/rooms/${room.code}/answers/${answerId}/hide`)
+        .set('x-admin-key', room.adminKey);
+      expect(oculta.status).toBe(200);
+
+      const despues = await request(app)
+        .get(`/api/rooms/${room.code}/admin`)
+        .set('x-admin-key', room.adminKey);
+      expect(despues.body.prompts[0].answerCount).toBe(0);
+
+      const borrada = await request(app)
+        .delete(`/api/rooms/${room.code}/prompts/${prompt.id}`)
+        .set('x-admin-key', room.adminKey);
+      expect(borrada.status).toBe(204);
+
+      const board = await tablero(room.code, 'v1');
+      expect(board.body.prompt).toBeNull();
+    });
+
+    it('una sala cerrada no admite consignas ni respuestas', async () => {
+      const room = await createRoom();
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      await request(app)
+        .patch(`/api/rooms/${room.code}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ closed: true });
+
+      const respuesta = await responder(room.code, prompt.id, 'v1', 'Algo', 'Sofía');
+      expect(respuesta.status).toBe(409);
+
+      const nueva = await request(app)
+        .post(`/api/rooms/${room.code}/prompts`)
+        .set('x-admin-key', room.adminKey)
+        .send({ text: '¿Otra más?' });
+      expect(nueva.status).toBe(409);
+    });
+
+    it('rechaza una consigna vacía y una respuesta vacía', async () => {
+      const room = await createRoom();
+      const vacia = await request(app)
+        .post(`/api/rooms/${room.code}/prompts`)
+        .set('x-admin-key', room.adminKey)
+        .send({ text: '  ' });
+      expect(vacia.status).toBe(400);
+
+      const prompt = await lanzar(room, '¿Qué entienden por república?');
+      const sinTexto = await responder(room.code, prompt.id, 'v1', '   ', 'Sofía');
+      expect(sinTexto.status).toBe(400);
+    });
+
+    it('no responde a una consigna de otra sala', async () => {
+      const propia = await createRoom('Propia');
+      const ajena = await createRoom('Ajena');
+      const prompt = await lanzar(ajena, '¿Qué entienden por república?');
+
+      const cruzada = await responder(propia.code, prompt.id, 'v1', 'Algo', 'Sofía');
+      expect(cruzada.status).toBe(404);
+    });
+  });
+
   describe('área del docente', () => {
     it('valida la contraseña maestra', async () => {
       const ok = await request(app).post('/api/admin/session').send({ password: 'clave-docente' });

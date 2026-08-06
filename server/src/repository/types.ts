@@ -1,4 +1,4 @@
-import type { Cluster, ClusterStatus, Question, Room } from '../types.js';
+import type { Answer, Cluster, ClusterStatus, Prompt, Question, Room } from '../types.js';
 
 /** Grupo candidato con los textos de sus preguntas, para decidir dónde cae una nueva. */
 export interface ClusterWithTexts {
@@ -12,6 +12,12 @@ export interface ClusterWithTexts {
 export interface BoardData {
   clusters: Cluster[];
   questions: Question[];
+}
+
+/** Las consignas de una sala con sus respuestas visibles. */
+export interface PromptData {
+  prompts: Prompt[];
+  answers: Answer[];
 }
 
 export interface CreateQuestionInput {
@@ -97,6 +103,31 @@ export interface Repository {
   mergeClusters(roomId: string, sourceId: string, targetId: string): Promise<Cluster>;
 
   getBoardData(roomId: string): Promise<BoardData>;
+
+  // ------------------------------------------------- consignas del docente
+
+  /**
+   * Guarda una consigna nueva y cierra la que estuviera abierta.
+   *
+   * Las dos cosas van juntas a propósito: la pantalla del alumno muestra "la"
+   * consigna vigente, así que sólo puede haber una abierta por sala. Dejarlo en
+   * manos de quien llama abriría la puerta a dos consignas activas si dos
+   * pedidos llegan a la vez.
+   */
+  createPrompt(prompt: Prompt): Promise<Prompt>;
+  getPrompt(roomId: string, promptId: string): Promise<Prompt | null>;
+  updatePrompt(roomId: string, promptId: string, changes: { closed?: boolean }): Promise<Prompt>;
+  /** Borra la consigna y, con ella, sus respuestas. */
+  deletePrompt(roomId: string, promptId: string): Promise<void>;
+
+  /**
+   * Registra la respuesta de un participante, reemplazando la anterior si ya
+   * había respondido esa consigna: una persona, una respuesta.
+   */
+  saveAnswer(answer: Answer): Promise<Answer>;
+  hideAnswer(roomId: string, answerId: string): Promise<void>;
+
+  getPromptData(roomId: string): Promise<PromptData>;
 
   /** Cierra conexiones abiertas. */
   close(): Promise<void>;

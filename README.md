@@ -41,6 +41,30 @@ el área completa.
 Desde el panel, el botón **Proyectar** abre `/p/CÓDIGO`: una pantalla pensada
 para el proyector, con el código en grande y el ranking en vivo, sin controles.
 
+**El docente también pregunta**
+
+Además de responder, el docente puede tirarle una pregunta a la clase y que
+contesten todos. Va en la misma sala y con el mismo código:
+
+1. Escribe la pregunta en *Preguntarle a la clase* y la lanza.
+2. A los alumnos les aparece arriba de todo, en violeta, con el campo para
+   contestar. Las respuestas van firmadas, igual que las preguntas.
+3. Cada uno ve **cuántos** contestaron desde el principio, pero **qué**
+   contestaron recién cuando manda la suya: si viera las respuestas ajenas
+   antes, la consigna mediría quién copió primero en lugar de qué piensa la
+   clase. Al cerrarla, quedan a la vista de todos.
+4. Volver a responder corrige la respuesta anterior: una persona, una respuesta.
+
+Hay una sola consigna viva por sala; lanzar una nueva cierra la anterior, que
+queda archivada con sus respuestas. Mientras esté abierta, la pantalla de
+proyección muestra esa pregunta y el contador de respuestas en lugar del
+ranking.
+
+Las respuestas no se agrupan, a diferencia de las preguntas de los alumnos. Es
+deliberado: las preguntas se agrupan porque son muchas versiones de lo mismo y
+hay que reducirlas, mientras que de una consigna lo que interesa es justamente
+la variedad de lo que contestó cada uno.
+
 **Alumnos — la portada, sin contraseña**
 
 1. Entran con el código y ponen su nombre. **No hay preguntas anónimas**: el
@@ -292,6 +316,8 @@ falla si un cambio empeora estas métricas.
 - **Ocultar** una pregunta inapropiada (no se borra, queda para revisar).
 - Ajustar la sensibilidad del agrupamiento y cerrar la sala al terminar.
 - **Proyectar** la sala: código en grande y ranking en vivo, para el proyector.
+- **Preguntarle a la clase**: lanzar una consigna, ver las respuestas llegar,
+  cerrarla, ocultar una respuesta o borrarla con todo lo que juntó.
 
 ## Estructura
 
@@ -306,12 +332,12 @@ server/                    API en Express + TypeScript
     types.ts               contrato por operación
     memory.ts              archivo JSON, para proceso único
     postgres.ts            Postgres, para serverless
-  src/service.ts           reglas de negocio (salas, votos, ranking)
+  src/service.ts           reglas de negocio (salas, votos, ranking, consignas)
   src/app.ts               rutas HTTP, SSE y modo de tiempo real
   src/tools/calibrate.ts   medición del umbral
 client/                    React + Vite + TypeScript
   src/pages/               inicio, vista de alumno, panel del docente, proyección
-  src/components/          escudo institucional y tarjeta de tema del ranking
+  src/components/          escudo, tarjeta del ranking y consigna del docente
   public/logo.png          escudo de la Escuela de Dirigentes (favicon y marca)
   src/useLive.ts           sincronización en vivo (SSE o sondeo, según el server)
 dist/                      build del cliente (generado)
@@ -356,7 +382,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 136 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 150 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 

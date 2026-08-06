@@ -5,8 +5,13 @@ import type { TopicMatcher, TopicOption } from './text/claude.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
 import type { Repository } from './repository/types.js';
 import type {
+  AdminPrompt,
+  Answer,
   Cluster,
   ClusterStatus,
+  LivePrompt,
+  Prompt,
+  PublicAnswer,
   PublicQuestion,
   Question,
   RankedCluster,
@@ -19,6 +24,9 @@ export const MIN_AUTHOR_LENGTH = 2;
 export const MAX_TITLE_LENGTH = 120;
 /** Tope de preguntas por participante por minuto, contra ráfagas y bromas. */
 export const MAX_QUESTIONS_PER_MINUTE = 4;
+/** Consigna del docente y respuesta del alumno. */
+export const MAX_PROMPT_LENGTH = 300;
+export const MAX_ANSWER_LENGTH = 500;
 
 export class ServiceError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -36,6 +44,27 @@ function secretsMatch(a: string, b: string): boolean {
   const right = Buffer.from(b);
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+/**
+ * Nombre con el que se firma. No hay anónimos: ni preguntas ni respuestas.
+ */
+function normalizeAuthor(raw: string): string {
+  const author = raw.trim().replace(/\s+/g, ' ').slice(0, MAX_AUTHOR_LENGTH);
+  if (author.length < MIN_AUTHOR_LENGTH) {
+    throw new ServiceError(400, 'Ingresá tu nombre para poder participar');
+  }
+  return author;
+}
+
+function toPublicAnswer(answer: Answer, viewerId: string): PublicAnswer {
+  return {
+    id: answer.id,
+    text: answer.text,
+    author: answer.author,
+    createdAt: answer.createdAt,
+    mine: viewerId !== '' && answer.voterId === viewerId,
+  };
 }
 
 export class Service {
@@ -264,10 +293,7 @@ export class Service {
       throw new ServiceError(400, 'La pregunta es demasiado corta');
     }
     // El nombre es obligatorio: cada pregunta lleva la firma de quien la hizo.
-    const author = input.author.trim().replace(/\s+/g, ' ').slice(0, MAX_AUTHOR_LENGTH);
-    if (author.length < MIN_AUTHOR_LENGTH) {
-      throw new ServiceError(400, 'Ingresá tu nombre para poder preguntar');
-    }
+    const author = normalizeAuthor(input.author);
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
@@ -461,6 +487,128 @@ export class Service {
       if (byStatus !== 0) return byStatus;
       if (b.score !== a.score) return b.score - a.score;
       return b.lastActivityAt - a.lastActivityAt;
+    });
+  }
+
+  // ------------------------------------------------- consignas del docente
+
+  /**
+   * Lanza una consigna a la clase. Cierra automáticamente la anterior: la
+   * pantalla del alumno muestra una sola, la que está viva ahora.
+   */
+  async createPrompt(room: Room, text: string): Promise<Prompt> {
+    if (room.closed) {
+      throw new ServiceError(409, 'La sala está cerrada: no se puede lanzar una pregunta');
+    }
+    const clean = text.trim().replace(/\s+/g, ' ').slice(0, MAX_PROMPT_LENGTH);
+    if (clean.length < 3) {
+      throw new ServiceError(400, 'Escribí la pregunta que querés hacerle a la clase');
+    }
+    return this.repository.createPrompt({
+      id: newId(),
+      roomId: room.id,
+      text: clean,
+      closed: false,
+      createdAt: Date.now(),
+      closedAt: null,
+    });
+  }
+
+  async setPromptClosed(room: Room, promptId: string, closed: boolean): Promise<Prompt> {
+    await this.requirePrompt(room, promptId);
+    return this.repository.updatePrompt(room.id, promptId, { closed });
+  }
+
+  async deletePrompt(room: Room, promptId: string): Promise<void> {
+    await this.requirePrompt(room, promptId);
+    await this.repository.deletePrompt(room.id, promptId);
+  }
+
+  async hideAnswer(room: Room, answerId: string): Promise<void> {
+    await this.repository.hideAnswer(room.id, answerId).catch(() => {
+      throw new ServiceError(404, 'Respuesta inexistente');
+    });
+  }
+
+  private async requirePrompt(room: Room, promptId: string): Promise<Prompt> {
+    const prompt = await this.repository.getPrompt(room.id, promptId);
+    if (!prompt) throw new ServiceError(404, 'Esa pregunta del docente no existe');
+    return prompt;
+  }
+
+  /** Registra la respuesta de un alumno a la consigna vigente. */
+  async answerPrompt(
+    room: Room,
+    promptId: string,
+    input: { text: string; author: string; voterId: string },
+  ): Promise<Answer> {
+    if (room.closed) {
+      throw new ServiceError(409, 'La sala está cerrada: ya no se aceptan respuestas');
+    }
+    const prompt = await this.requirePrompt(room, promptId);
+    if (prompt.closed) {
+      throw new ServiceError(409, 'El docente cerró esta pregunta: ya no se aceptan respuestas');
+    }
+
+    const text = input.text.trim().replace(/\s+/g, ' ').slice(0, MAX_ANSWER_LENGTH);
+    if (text.length === 0) throw new ServiceError(400, 'Escribí tu respuesta');
+    const author = normalizeAuthor(input.author);
+    const voterId = input.voterId.trim();
+    if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
+
+    return this.repository.saveAnswer({
+      id: newId(),
+      promptId: prompt.id,
+      roomId: room.id,
+      text,
+      author,
+      voterId,
+      createdAt: Date.now(),
+      hidden: false,
+    });
+  }
+
+  /**
+   * La consigna vigente tal como la ve un alumno.
+   *
+   * Las respuestas ajenas se entregan sólo si el visitante ya respondió o si la
+   * consigna está cerrada. Ver lo que contestaron los demás antes de escribir
+   * convierte la consigna en un ejercicio de copiar al primero.
+   */
+  async getLivePrompt(room: Room, viewerId: string): Promise<LivePrompt | null> {
+    const { prompts, answers } = await this.repository.getPromptData(room.id);
+    const prompt = prompts[0];
+    if (!prompt) return null;
+
+    const suyas = answers.filter((answer) => answer.promptId === prompt.id);
+    const mia = suyas.find((answer) => answer.voterId === viewerId) ?? null;
+    const puedeVer = mia !== null || prompt.closed;
+
+    return {
+      id: prompt.id,
+      text: prompt.text,
+      closed: prompt.closed,
+      createdAt: prompt.createdAt,
+      answerCount: suyas.length,
+      myAnswer: mia?.text ?? null,
+      answers: puedeVer ? suyas.map((answer) => toPublicAnswer(answer, viewerId)) : [],
+    };
+  }
+
+  /** Todas las consignas con sus respuestas, para el panel del docente. */
+  async getPromptsForAdmin(room: Room): Promise<AdminPrompt[]> {
+    const { prompts, answers } = await this.repository.getPromptData(room.id);
+    return prompts.map((prompt) => {
+      const suyas = answers.filter((answer) => answer.promptId === prompt.id);
+      return {
+        id: prompt.id,
+        text: prompt.text,
+        closed: prompt.closed,
+        createdAt: prompt.createdAt,
+        closedAt: prompt.closedAt,
+        answerCount: suyas.length,
+        answers: suyas.map((answer) => toPublicAnswer(answer, '')),
+      };
     });
   }
 

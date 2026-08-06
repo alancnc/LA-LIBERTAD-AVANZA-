@@ -1,16 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { newId } from '../ids.js';
-import type { Cluster, ClusterStatus, Database, Question, Room } from '../types.js';
+import type {
+  Answer,
+  Cluster,
+  ClusterStatus,
+  Database,
+  Prompt,
+  Question,
+  Room,
+} from '../types.js';
 import type {
   BoardData,
   ClusterWithTexts,
   CreatedQuestion,
   CreateQuestionInput,
+  PromptData,
   Repository,
 } from './types.js';
 
-const EMPTY_DB: Database = { rooms: [], clusters: [], questions: [] };
+const EMPTY_DB: Database = { rooms: [], clusters: [], questions: [], prompts: [], answers: [] };
 
 /**
  * Repositorio respaldado por un único archivo JSON (o sólo memoria).
@@ -36,6 +45,9 @@ export class JsonRepository implements Repository {
         rooms: parsed.rooms ?? [],
         clusters: parsed.clusters ?? [],
         questions: parsed.questions ?? [],
+        // Un archivo escrito por una versión anterior no tiene estas dos.
+        prompts: parsed.prompts ?? [],
+        answers: parsed.answers ?? [],
       };
     } catch (error) {
       // Un archivo corrupto no debe impedir que arranque el servidor: se
@@ -250,6 +262,89 @@ export class JsonRepository implements Repository {
       clusters: this.data.clusters.filter((cluster) => cluster.roomId === roomId),
       questions: this.data.questions.filter(
         (question) => question.roomId === roomId && !question.hidden,
+      ),
+    };
+  }
+
+  // ------------------------------------------------- consignas del docente
+
+  async createPrompt(prompt: Prompt): Promise<Prompt> {
+    const ahora = Date.now();
+    for (const anterior of this.data.prompts) {
+      if (anterior.roomId === prompt.roomId && !anterior.closed) {
+        anterior.closed = true;
+        anterior.closedAt = ahora;
+      }
+    }
+    this.data.prompts.push(prompt);
+    this.persist();
+    return prompt;
+  }
+
+  async getPrompt(roomId: string, promptId: string): Promise<Prompt | null> {
+    return (
+      this.data.prompts.find((prompt) => prompt.id === promptId && prompt.roomId === roomId) ??
+      null
+    );
+  }
+
+  async updatePrompt(
+    roomId: string,
+    promptId: string,
+    changes: { closed?: boolean },
+  ): Promise<Prompt> {
+    const prompt = await this.getPrompt(roomId, promptId);
+    if (!prompt) throw new Error('Consigna inexistente');
+    if (changes.closed !== undefined) {
+      prompt.closed = changes.closed;
+      prompt.closedAt = changes.closed ? Date.now() : null;
+    }
+    this.persist();
+    return prompt;
+  }
+
+  async deletePrompt(roomId: string, promptId: string): Promise<void> {
+    const prompt = await this.getPrompt(roomId, promptId);
+    if (!prompt) throw new Error('Consigna inexistente');
+    this.data.prompts = this.data.prompts.filter((item) => item.id !== promptId);
+    this.data.answers = this.data.answers.filter((answer) => answer.promptId !== promptId);
+    this.persist();
+  }
+
+  async saveAnswer(answer: Answer): Promise<Answer> {
+    const previa = this.data.answers.find(
+      (item) => item.promptId === answer.promptId && item.voterId === answer.voterId,
+    );
+    if (previa) {
+      // Se conserva el id y el momento original: es la misma respuesta corregida,
+      // no una nueva, y así no salta de lugar en la lista al reescribirla.
+      previa.text = answer.text;
+      previa.author = answer.author;
+      previa.hidden = false;
+      this.persist();
+      return previa;
+    }
+    this.data.answers.push(answer);
+    this.persist();
+    return answer;
+  }
+
+  async hideAnswer(roomId: string, answerId: string): Promise<void> {
+    const answer = this.data.answers.find(
+      (item) => item.id === answerId && item.roomId === roomId,
+    );
+    if (!answer) throw new Error('Respuesta inexistente');
+    answer.hidden = true;
+    this.persist();
+  }
+
+  async getPromptData(roomId: string): Promise<PromptData> {
+    return {
+      prompts: this.data.prompts
+        .filter((prompt) => prompt.roomId === roomId)
+        .sort((a, b) => b.createdAt - a.createdAt),
+      answers: this.data.answers.filter(
+        (answer) => answer.roomId === roomId && !answer.hidden,
       ),
     };
   }

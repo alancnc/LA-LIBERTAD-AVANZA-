@@ -22,6 +22,24 @@ export function ProjectionPage() {
     .filter((cluster) => cluster.status !== 'answered' && cluster.status !== 'discarded')
     .slice(0, VISIBLE_TOPICS);
 
+  // Con una consigna abierta, la pantalla es esa consigna: es lo que la clase
+  // tiene que estar mirando, y el ranking de dudas puede esperar.
+  const prompt = data?.prompt ?? null;
+  if (prompt && !prompt.closed) {
+    return (
+      <div className="projection">
+        <img src="/logo.png" alt="Escuela de Dirigentes" className="projection__logo" />
+        <p className="projection__url">
+          Respondé desde tu celular · código <strong>{code}</strong>
+        </p>
+        <h1 className="projection__prompt">{prompt.text}</h1>
+        <p className="projection__count">
+          {prompt.answerCount} {prompt.answerCount === 1 ? 'respuesta' : 'respuestas'}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="projection">
       <img src="/logo.png" alt="Escuela de Dirigentes" className="projection__logo" />
