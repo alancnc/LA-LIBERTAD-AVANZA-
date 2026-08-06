@@ -670,6 +670,11 @@ export function createApp(options: AppOptions = {}) {
         // manifiesta como errores sueltos en pantallas que no tienen que ver.
         storage: almacenamiento === null ? 'ok' : 'error',
         storageError: almacenamiento === null ? undefined : almacenamiento.message,
+        // Qué versión está viva. Sin esto, "¿ya se desplegó lo último?" sólo se
+        // puede contestar mirando la interfaz y adivinando. Vercel define estas
+        // variables solo; fuera de Vercel quedan en null.
+        version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+        deploy: process.env.VERCEL_DEPLOYMENT_ID ?? null,
       });
     }),
   );

@@ -81,7 +81,16 @@ export function AdminHome() {
     setCreando(true);
     setError(null);
     try {
-      const room = await api.createRoom(titulo || 'Clase');
+      // Sin nombre no se crea nada. Antes caía en un "Clase" por defecto, así
+      // que un submit accidental —o el navegador autocompletando este campo—
+      // dejaba una clase fantasma en el listado.
+      const nombre = titulo.trim();
+      if (!nombre) {
+        setError('Poné un nombre para la clase');
+        setCreando(false);
+        return;
+      }
+      const room = await api.createRoom(nombre);
       saveAdminKey(room.code, room.adminKey);
       navigate(`/admin/${room.code}`);
     } catch (cause) {
@@ -224,14 +233,26 @@ export function AdminHome() {
             </label>
             <input
               id="titulo"
+              name="nombre-de-la-clase"
               value={titulo}
               onChange={(event) => setTitulo(event.target.value)}
               placeholder="Ej: Análisis Matemático II — Clase 7"
               maxLength={120}
+              // Este campo está en la misma página que el formulario de acceso.
+              // Sin esto, el gestor de contraseñas del navegador lo toma por el
+              // campo de usuario y lo rellena solo, y termina creando una clase
+              // con el nombre de usuario guardado.
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
             />
           </div>
           <div className="row">
-            <button type="submit" className="btn btn--primary" disabled={creando}>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={creando || !titulo.trim()}
+            >
               {creando ? 'Creando...' : 'Crear clase'}
             </button>
           </div>
