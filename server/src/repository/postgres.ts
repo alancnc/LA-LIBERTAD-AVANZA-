@@ -82,6 +82,11 @@ CREATE TABLE IF NOT EXISTS answers (
 
 CREATE UNIQUE INDEX IF NOT EXISTS answers_prompt_voter_idx ON answers(prompt_id, voter_id);
 
+-- Opciones de una consigna de opción múltiple, como JSON. Nula o vacía = la
+-- consigna es de respuesta abierta. Se agrega aparte para que las bases que ya
+-- tienen la tabla creada la incorporen sin migración manual.
+ALTER TABLE prompts ADD COLUMN IF NOT EXISTS options TEXT;
+
 -- Vector del texto para la comparación semántica. Se guarda como JSON: son
 -- unos pocos cientos de números por pregunta y el volumen no justifica una
 -- extensión como pgvector, que además no está en todos los proveedores.
@@ -167,6 +172,7 @@ interface PromptRow {
   closed: boolean;
   created_at: string;
   closed_at: string | null;
+  options: string | null;
 }
 
 interface AnswerRow {
@@ -185,10 +191,24 @@ function toPrompt(row: PromptRow): Prompt {
     id: row.id,
     roomId: row.room_id,
     text: row.text,
+    options: parseOptions(row.options),
     closed: row.closed,
     createdAt: Number(row.created_at),
     closedAt: row.closed_at === null ? null : Number(row.closed_at),
   };
+}
+
+/** Las filas anteriores a la columna traen null; una lista rota se ignora. */
+function parseOptions(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function toAnswer(row: AnswerRow): Answer {
@@ -724,9 +744,15 @@ export class PostgresRepository implements Repository {
         [prompt.roomId, Date.now()],
       );
       await client.query(
-        `INSERT INTO prompts (id, room_id, text, closed, created_at, closed_at)
-         VALUES ($1, $2, $3, FALSE, $4, NULL)`,
-        [prompt.id, prompt.roomId, prompt.text, prompt.createdAt],
+        `INSERT INTO prompts (id, room_id, text, closed, created_at, closed_at, options)
+         VALUES ($1, $2, $3, FALSE, $4, NULL, $5)`,
+        [
+          prompt.id,
+          prompt.roomId,
+          prompt.text,
+          prompt.createdAt,
+          prompt.options.length > 0 ? JSON.stringify(prompt.options) : null,
+        ],
       );
       await client.query('COMMIT');
       return prompt;

@@ -46,13 +46,19 @@ para el proyector, con el código en grande y el ranking en vivo, sin controles.
 Además de responder, el docente puede tirarle una pregunta a la clase y que
 contesten todos. Va en la misma sala y con el mismo código:
 
-1. Escribe la pregunta en *Preguntarle a la clase* y la lanza.
+1. Escribe la pregunta en *Preguntarle a la clase* y la lanza. Puede ser de
+   **respuesta abierta** (cada uno escribe) o de **opción múltiple**: se cargan
+   entre 2 y 6 opciones y los alumnos sólo eligen una, de un toque. El tope de
+   seis no es capricho: el reparto se proyecta en el aula y con más barras deja
+   de leerse de lejos.
 2. A los alumnos les aparece arriba de todo, en violeta, con el campo para
    contestar. Las respuestas van firmadas, igual que las preguntas.
 3. Cada uno ve **cuántos** contestaron desde el principio, pero **qué**
    contestaron recién cuando manda la suya: si viera las respuestas ajenas
    antes, la consigna mediría quién copió primero en lugar de qué piensa la
-   clase. Al cerrarla, quedan a la vista de todos.
+   clase. En opción múltiple vale lo mismo para el reparto de votos, y por eso
+   la pantalla de proyección muestra las opciones pero no el recuento en vivo.
+   Al cerrarla, todo queda a la vista de todos.
 4. Volver a responder corrige la respuesta anterior: una persona, una respuesta.
 
 Hay una sola consigna viva por sala; lanzar una nueva cierra la anterior, que
@@ -401,7 +407,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 170 tests: agrupamiento, significado, calidad, API, acceso y sorteo
+npm test         # 186 tests: agrupamiento, significado, calidad, API, acceso y sorteo
 npm run typecheck
 ```
 

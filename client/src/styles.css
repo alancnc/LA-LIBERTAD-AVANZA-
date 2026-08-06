@@ -1059,6 +1059,160 @@ textarea {
   }
 }
 
+/* ------------------------------------------------------- opción múltiple */
+
+/* Carga de opciones, en el panel del docente. */
+.opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--primary-softer);
+}
+
+.opciones__letra {
+  flex-shrink: 0;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+/* Elección del alumno: objetivos grandes, se toca desde el celular. */
+.opciones-elegir {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  transition: background 0.12s, transform 0.08s;
+}
+
+.opcion:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: #fff;
+}
+
+.opcion:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.opcion--mia {
+  background: #fff;
+  border-color: #fff;
+  color: var(--primary-strong);
+}
+
+.opcion__letra {
+  flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.opcion--mia .opcion__letra {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Reparto de votos. */
+.tally {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.tally__encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+.tally__opcion {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tally__numero {
+  flex-shrink: 0;
+  font-weight: 800;
+}
+
+.tally__porcentaje {
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.tally__pista {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  overflow: hidden;
+}
+
+.tally__barra {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 2px;
+}
+
+.tally__fila--mia .tally__opcion::after {
+  content: ' · tu elección';
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/* Sobre el violeta de la tarjeta de consigna, se invierten los tonos. */
+.prompt .tally__pista {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.prompt .tally__barra {
+  background: #fff;
+}
+
+.prompt__detalle {
+  margin-top: 0.9rem;
+  font-size: 0.9rem;
+}
+
+.prompt__detalle summary {
+  cursor: pointer;
+  opacity: 0.85;
+}
+
 /* -------------------------------------------------- pantalla de proyección */
 
 .projection {
@@ -1114,6 +1268,42 @@ textarea {
   line-height: 1.15;
   max-width: 22ch;
   overflow-wrap: anywhere;
+}
+
+.projection__opciones {
+  list-style: none;
+  margin: 1.8rem 0 0;
+  padding: 0;
+  width: min(48rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.projection__opcion {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: clamp(1.05rem, 2.4vw, 1.9rem);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.projection__letra {
+  flex-shrink: 0;
+  width: 1.7em;
+  height: 1.7em;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--primary-strong);
+  font-weight: 800;
 }
 
 .projection__count {

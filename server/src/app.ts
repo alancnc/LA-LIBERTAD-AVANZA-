@@ -497,14 +497,19 @@ export function createApp(options: AppOptions = {}) {
     '/rooms/:code/prompts',
     route(async (req, res) => {
       const room = await roomAdmin(req);
+      const opciones = Array.isArray(req.body?.options)
+        ? req.body.options.filter((item: unknown): item is string => typeof item === 'string')
+        : [];
       const prompt = await service.createPrompt(
         room,
         typeof req.body?.text === 'string' ? req.body.text : '',
+        opciones,
       );
       notify(room.id, 'prompt');
       res.status(201).json({
         id: prompt.id,
         text: prompt.text,
+        options: prompt.options,
         closed: prompt.closed,
         createdAt: prompt.createdAt,
       });

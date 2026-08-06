@@ -33,6 +33,21 @@ export function ProjectionPage() {
           Respondé desde tu celular · código <strong>{code}</strong>
         </p>
         <h1 className="projection__prompt">{prompt.text}</h1>
+
+        {prompt.options.length > 0 ? (
+          // Con opciones se proyectan las opciones, no el recuento: el reparto
+          // en vivo mostraría a la clase lo que están votando los demás y
+          // arrastraría a los que todavía no eligieron.
+          <ol className="projection__opciones">
+            {prompt.options.map((opcion, indice) => (
+              <li key={opcion} className="projection__opcion">
+                <span className="projection__letra">{String.fromCharCode(65 + indice)}</span>
+                <span>{opcion}</span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+
         <p className="projection__count">
           {prompt.answerCount} {prompt.answerCount === 1 ? 'respuesta' : 'respuestas'}
         </p>

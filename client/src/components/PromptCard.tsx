@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type LivePrompt } from '../api.js';
+import { Tally } from './Tally.js';
 
 const MAX_ANSWER_LENGTH = 500;
 
@@ -31,16 +32,11 @@ export function PromptCard({ code, prompt, author, onAnswered }: Props) {
     setError(null);
   }, [prompt.id, prompt.myAnswer]);
 
-  async function enviar(event: FormEvent) {
-    event.preventDefault();
-    if (!text.trim()) {
-      setError('Escribí tu respuesta');
-      return;
-    }
+  async function mandar(respuesta: string) {
     setEnviando(true);
     setError(null);
     try {
-      await api.answerPrompt(code, prompt.id, text, author);
+      await api.answerPrompt(code, prompt.id, respuesta, author);
       setEditando(false);
       onAnswered();
     } catch (cause) {
@@ -49,6 +45,17 @@ export function PromptCard({ code, prompt, author, onAnswered }: Props) {
       setEnviando(false);
     }
   }
+
+  async function enviar(event: FormEvent) {
+    event.preventDefault();
+    if (!text.trim()) {
+      setError('Escribí tu respuesta');
+      return;
+    }
+    await mandar(text);
+  }
+
+  const esOpcionMultiple = prompt.options.length > 0;
 
   const respondidas =
     prompt.answerCount === 0
@@ -69,7 +76,33 @@ export function PromptCard({ code, prompt, author, onAnswered }: Props) {
         {prompt.closed ? `Cerrada · ${respondidas.toLowerCase()}` : respondidas}
       </p>
 
-      {prompt.closed ? null : editando ? (
+      {prompt.closed ? null : editando && esOpcionMultiple ? (
+        // Elegir una opción es un solo toque: no hace falta un botón de enviar.
+        <div className="stack">
+          <div className="opciones-elegir">
+            {prompt.options.map((opcion, indice) => (
+              <button
+                key={opcion}
+                type="button"
+                className={`opcion${prompt.myAnswer === opcion ? ' opcion--mia' : ''}`}
+                onClick={() => void mandar(opcion)}
+                disabled={enviando}
+              >
+                <span className="opcion__letra">{String.fromCharCode(65 + indice)}</span>
+                <span>{opcion}</span>
+              </button>
+            ))}
+          </div>
+          {error && <div className="error">{error}</div>}
+          {prompt.myAnswer !== null && (
+            <div className="row">
+              <button type="button" className="btn btn--ghost" onClick={() => setEditando(false)}>
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
+      ) : editando ? (
         <form onSubmit={enviar} className="stack">
           <div>
             <label className="label" htmlFor="respuesta">
@@ -115,15 +148,17 @@ export function PromptCard({ code, prompt, author, onAnswered }: Props) {
         </form>
       ) : (
         <div className="prompt__mine">
-          <p className="prompt__meta">Respondiste:</p>
+          <p className="prompt__meta">{esOpcionMultiple ? 'Elegiste:' : 'Respondiste:'}</p>
           <p className="prompt__mine-text">{prompt.myAnswer}</p>
           <button type="button" className="btn btn--small" onClick={() => setEditando(true)}>
-            Corregir mi respuesta
+            {esOpcionMultiple ? 'Cambiar mi elección' : 'Corregir mi respuesta'}
           </button>
         </div>
       )}
 
-      {prompt.answers.length > 0 && (
+      {prompt.tally.length > 0 && <Tally tally={prompt.tally} mine={prompt.myAnswer} />}
+
+      {!esOpcionMultiple && prompt.answers.length > 0 && (
         <ul className="prompt__answers">
           {prompt.answers.map((answer) => (
             <li className="prompt__answer" key={answer.id}>

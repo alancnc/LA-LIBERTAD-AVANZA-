@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { api, type AdminPrompt } from '../api.js';
+import { Tally } from './Tally.js';
 
 const MAX_PROMPT_LENGTH = 300;
+const MAX_OPTIONS = 6;
+const MAX_OPTION_LENGTH = 80;
 
 interface Props {
   code: string;
@@ -22,6 +25,8 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
   const [lanzando, setLanzando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  /** Vacío = consigna de respuesta abierta. Con contenido = opción múltiple. */
+  const [opciones, setOpciones] = useState<string[]>([]);
 
   const actual = prompts[0] ?? null;
   const anteriores = prompts.slice(1);
@@ -36,15 +41,23 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
     }
   }
 
+  const opcionesCargadas = opciones.filter((opcion) => opcion.trim());
+  const faltanOpciones = opciones.length > 0 && opcionesCargadas.length < 2;
+
   async function lanzar(event: FormEvent) {
     event.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || faltanOpciones) return;
     setLanzando(true);
     await correr(async () => {
-      await api.createPrompt(code, text, adminKey);
+      await api.createPrompt(code, text, adminKey, opcionesCargadas);
       setText('');
+      setOpciones([]);
     });
     setLanzando(false);
+  }
+
+  function cambiarOpcion(indice: number, valor: string) {
+    setOpciones((actuales) => actuales.map((item, i) => (i === indice ? valor : item)));
   }
 
   function alternar(promptId: string) {
@@ -79,14 +92,80 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
               {actual && !actual.closed && ' · Al lanzar esta, se cierra la anterior.'}
             </p>
           </div>
+
+          {opciones.length === 0 ? (
+            <div className="row">
+              <span className="muted">Los alumnos escriben la respuesta.</span>
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => setOpciones(['', ''])}
+              >
+                Usar opciones para elegir
+              </button>
+            </div>
+          ) : (
+            <div className="opciones">
+              <div className="row">
+                <span className="label" style={{ margin: 0 }}>
+                  Opciones
+                </span>
+                <div className="spacer" />
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setOpciones([])}
+                >
+                  Volver a respuesta abierta
+                </button>
+              </div>
+              {opciones.map((opcion, indice) => (
+                <div className="row" key={indice}>
+                  <span className="opciones__letra">{String.fromCharCode(65 + indice)}</span>
+                  <input
+                    value={opcion}
+                    onChange={(event) => cambiarOpcion(indice, event.target.value)}
+                    placeholder={`Opción ${indice + 1}`}
+                    maxLength={MAX_OPTION_LENGTH}
+                    autoComplete="off"
+                    aria-label={`Opción ${indice + 1}`}
+                    style={{ flex: 1 }}
+                  />
+                  {opciones.length > 2 && (
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small btn--danger"
+                      onClick={() =>
+                        setOpciones((actuales) => actuales.filter((_, i) => i !== indice))
+                      }
+                      aria-label={`Quitar la opción ${indice + 1}`}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {opciones.length < MAX_OPTIONS && (
+                <button
+                  type="button"
+                  className="btn btn--small"
+                  onClick={() => setOpciones((actuales) => [...actuales, ''])}
+                >
+                  Agregar opción
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="row">
             <button
               type="submit"
               className="btn btn--primary"
-              disabled={lanzando || text.trim().length < 3}
+              disabled={lanzando || text.trim().length < 3 || faltanOpciones}
             >
               {lanzando ? 'Lanzando...' : 'Lanzar pregunta'}
             </button>
+            {faltanOpciones && <span className="muted">Cargá al menos dos opciones.</span>}
           </div>
         </form>
       )}
@@ -126,10 +205,26 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
             </button>
           </div>
 
+          {actual.tally.length > 0 && <Tally tally={actual.tally} />}
+
           {actual.answers.length === 0 ? (
             <p className="prompt__meta" style={{ marginTop: '0.85rem' }}>
               Todavía no contestó nadie.
             </p>
+          ) : actual.options.length > 0 ? (
+            // Con opciones lo que importa es el reparto; el detalle de quién
+            // eligió qué se despliega sólo si hace falta mirarlo.
+            <details className="prompt__detalle">
+              <summary>Ver quién eligió cada opción</summary>
+              <ul className="prompt__answers">
+                {actual.answers.map((answer) => (
+                  <li className="prompt__answer" key={answer.id}>
+                    <span className="prompt__answer-author">{answer.author}</span>
+                    <span>{answer.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : (
             <ul className="prompt__answers">
               {actual.answers.map((answer) => (

@@ -56,10 +56,24 @@ export interface Prompt {
   id: string;
   roomId: string;
   text: string;
+  /**
+   * Opciones para elegir. Vacío = pregunta abierta, se responde escribiendo.
+   *
+   * La respuesta a una consigna con opciones se guarda como el texto de la
+   * opción elegida, no como un índice: si el docente edita o reordena las
+   * opciones, lo que contestó cada uno sigue queriendo decir lo mismo.
+   */
+  options: string[];
   /** Cerrada: queda en pantalla pero ya no admite respuestas nuevas. */
   closed: boolean;
   createdAt: number;
   closedAt: number | null;
+}
+
+/** Cuántos eligieron cada opción. */
+export interface OptionTally {
+  option: string;
+  count: number;
 }
 
 export interface Answer {
@@ -125,12 +139,20 @@ export interface PublicAnswer {
 export interface LivePrompt {
   id: string;
   text: string;
+  /** Opciones para elegir; vacío si la consigna es de respuesta abierta. */
+  options: string[];
   closed: boolean;
   createdAt: number;
   /** Cuántas personas respondieron. Visible siempre, aun sin haber respondido. */
   answerCount: number;
   /** Lo que respondió el visitante, o null si todavía no respondió. */
   myAnswer: string | null;
+  /**
+   * El reparto por opción. Sigue la misma regla que `answers`: llega vacío
+   * hasta que el visitante responde, porque ver el recuento antes de elegir
+   * arrastra a la mayoría igual que ver las respuestas ajenas.
+   */
+  tally: OptionTally[];
   /**
    * Las respuestas de los demás.
    *
@@ -146,9 +168,12 @@ export interface LivePrompt {
 export interface AdminPrompt {
   id: string;
   text: string;
+  options: string[];
   closed: boolean;
   createdAt: number;
   closedAt: number | null;
   answerCount: number;
   answers: PublicAnswer[];
+  /** El docente ve el reparto siempre: es para lo que lanzó la consigna. */
+  tally: OptionTally[];
 }

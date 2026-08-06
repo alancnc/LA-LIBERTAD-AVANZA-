@@ -45,8 +45,13 @@ export class JsonRepository implements Repository {
         rooms: parsed.rooms ?? [],
         clusters: parsed.clusters ?? [],
         questions: parsed.questions ?? [],
-        // Un archivo escrito por una versión anterior no tiene estas dos.
-        prompts: parsed.prompts ?? [],
+        // Un archivo escrito por una versión anterior no tiene estas dos, y sus
+        // consignas no tienen `options`: se completan para no arrastrar
+        // `undefined` por el resto del código.
+        prompts: (parsed.prompts ?? []).map((prompt) => ({
+          ...prompt,
+          options: prompt.options ?? [],
+        })),
         answers: parsed.answers ?? [],
       };
     } catch (error) {

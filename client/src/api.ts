@@ -47,10 +47,18 @@ export interface PublicAnswer {
   mine: boolean;
 }
 
+/** Cuántos eligieron cada opción. */
+export interface OptionTally {
+  option: string;
+  count: number;
+}
+
 /** La pregunta que el docente le lanzó a la clase, tal como la ve un alumno. */
 export interface LivePrompt {
   id: string;
   text: string;
+  /** Opciones para elegir; vacío si la consigna es de respuesta abierta. */
+  options: string[];
   closed: boolean;
   createdAt: number;
   answerCount: number;
@@ -58,16 +66,20 @@ export interface LivePrompt {
   myAnswer: string | null;
   /** Vacío hasta que uno responde: no se ven las respuestas ajenas antes. */
   answers: PublicAnswer[];
+  /** Igual que `answers`: vacío hasta responder. */
+  tally: OptionTally[];
 }
 
 export interface AdminPrompt {
   id: string;
   text: string;
+  options: string[];
   closed: boolean;
   createdAt: number;
   closedAt: number | null;
   answerCount: number;
   answers: PublicAnswer[];
+  tally: OptionTally[];
 }
 
 export interface BoardResponse {
@@ -224,12 +236,16 @@ export const api = {
       `/rooms/${code}/questions/${questionId}/vote`,
     ),
 
-  /** El docente lanza una pregunta para que la responda la clase. */
-  createPrompt: (code: string, text: string, adminKey: string) =>
-    call<{ id: string; text: string; closed: boolean }>('POST', `/rooms/${code}/prompts`, {
-      body: { text },
-      adminKey,
-    }),
+  /**
+   * El docente lanza una pregunta para que la responda la clase.
+   * Sin `options` es de respuesta abierta; con opciones, se elige una.
+   */
+  createPrompt: (code: string, text: string, adminKey: string, options: string[] = []) =>
+    call<{ id: string; text: string; options: string[]; closed: boolean }>(
+      'POST',
+      `/rooms/${code}/prompts`,
+      { body: { text, options }, adminKey },
+    ),
 
   setPromptClosed: (code: string, promptId: string, closed: boolean, adminKey: string) =>
     call<{ id: string; closed: boolean }>('PATCH', `/rooms/${code}/prompts/${promptId}`, {

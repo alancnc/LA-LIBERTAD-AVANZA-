@@ -87,20 +87,33 @@ export function SorteoPanel({ onClose }: { onClose: () => void }) {
     }
 
     setEstado('sorteando');
+
+    // La ruleta recorre la lista en orden y no se detiene hasta caer sobre el
+    // ganador. Antes saltaba al azar y frenaba en cualquiera: la animación
+    // terminaba sobre un nombre y después salía otro, que es exactamente lo que
+    // no puede pasar en un sorteo — parece arreglado aunque no lo esté.
+    const indiceGanador = nombres.indexOf(resultado[0]!);
+    let indice = nombres.length - 1;
     let transcurrido = 0;
     let espera = 55;
 
     const paso = () => {
-      // Para el parpadeo alcanza Math.random: no decide nada.
-      setResaltado(Math.floor(Math.random() * nombres.length));
+      indice = (indice + 1) % nombres.length;
+      setResaltado(indice);
       transcurrido += espera;
-      espera *= 1.14;
-      if (transcurrido < DURACION_MS) {
+      // El tope evita que con muchos nombres las últimas vueltas se eternicen.
+      espera = Math.min(espera * 1.14, 240);
+
+      if (transcurrido < DURACION_MS || indice !== indiceGanador) {
         temporizador.current = setTimeout(paso, espera);
-      } else {
+        return;
+      }
+      // Queda un instante quieto sobre el ganador antes de revelarlo: sin esa
+      // pausa la ruleta desaparece justo cuando frena y no se llega a ver dónde.
+      temporizador.current = setTimeout(() => {
         setOrden(resultado);
         setEstado('listo');
-      }
+      }, 700);
     };
     paso();
   }

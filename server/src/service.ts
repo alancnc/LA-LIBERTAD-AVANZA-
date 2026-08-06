@@ -10,6 +10,7 @@ import type {
   Cluster,
   ClusterStatus,
   LivePrompt,
+  OptionTally,
   Prompt,
   PublicAnswer,
   PublicQuestion,
@@ -27,6 +28,15 @@ export const MAX_QUESTIONS_PER_MINUTE = 4;
 /** Consigna del docente y respuesta del alumno. */
 export const MAX_PROMPT_LENGTH = 300;
 export const MAX_ANSWER_LENGTH = 500;
+/**
+ * Opciones de una consigna de opción múltiple.
+ *
+ * El tope de seis no es arbitrario: el reparto se proyecta en el aula y con más
+ * barras deja de leerse de lejos, que es para lo que sirve.
+ */
+export const MIN_OPTIONS = 2;
+export const MAX_OPTIONS = 6;
+export const MAX_OPTION_LENGTH = 80;
 
 export class ServiceError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -55,6 +65,46 @@ function normalizeAuthor(raw: string): string {
     throw new ServiceError(400, 'Ingresá tu nombre para poder participar');
   }
   return author;
+}
+
+/**
+ * Deja las opciones listas para guardar, o lanza si no forman una consigna
+ * de opción múltiple válida.
+ *
+ * Una lista vacía es legítima: significa que la consigna es de respuesta
+ * abierta. Una sola opción, en cambio, no es una elección.
+ */
+function normalizeOptions(options: readonly string[]): string[] {
+  const vistas = new Set<string>();
+  const limpias: string[] = [];
+  for (const option of options) {
+    const limpia = option.trim().replace(/\s+/g, ' ').slice(0, MAX_OPTION_LENGTH);
+    if (!limpia) continue;
+    const clave = limpia.toLocaleLowerCase('es');
+    if (vistas.has(clave)) {
+      throw new ServiceError(400, `La opción "${limpia}" está repetida`);
+    }
+    vistas.add(clave);
+    limpias.push(limpia);
+  }
+
+  if (limpias.length === 0) return [];
+  if (limpias.length < MIN_OPTIONS) {
+    throw new ServiceError(400, `Cargá al menos ${MIN_OPTIONS} opciones, o ninguna`);
+  }
+  if (limpias.length > MAX_OPTIONS) {
+    throw new ServiceError(400, `No más de ${MAX_OPTIONS} opciones`);
+  }
+  return limpias;
+}
+
+/** Cuántos eligieron cada opción, en el orden en que las cargó el docente. */
+function contarPorOpcion(prompt: Prompt, answers: readonly Answer[]): OptionTally[] {
+  if (prompt.options.length === 0) return [];
+  return prompt.options.map((option) => ({
+    option,
+    count: answers.filter((answer) => answer.text === option).length,
+  }));
 }
 
 function toPublicAnswer(answer: Answer, viewerId: string): PublicAnswer {
@@ -526,7 +576,7 @@ export class Service {
    * Lanza una consigna a la clase. Cierra automáticamente la anterior: la
    * pantalla del alumno muestra una sola, la que está viva ahora.
    */
-  async createPrompt(room: Room, text: string): Promise<Prompt> {
+  async createPrompt(room: Room, text: string, options: string[] = []): Promise<Prompt> {
     if (room.closed) {
       throw new ServiceError(409, 'La sala está cerrada: no se puede lanzar una pregunta');
     }
@@ -538,6 +588,7 @@ export class Service {
       id: newId(),
       roomId: room.id,
       text: clean,
+      options: normalizeOptions(options),
       closed: false,
       createdAt: Date.now(),
       closedAt: null,
@@ -582,6 +633,13 @@ export class Service {
 
     const text = input.text.trim().replace(/\s+/g, ' ').slice(0, MAX_ANSWER_LENGTH);
     if (text.length === 0) throw new ServiceError(400, 'Escribí tu respuesta');
+    // Con opciones, la respuesta tiene que ser una de ellas. Se valida contra
+    // la lista guardada y no contra lo que diga el cliente: si no, cualquiera
+    // podría meter una opción inventada en el recuento con una petición armada
+    // a mano.
+    if (prompt.options.length > 0 && !prompt.options.includes(text)) {
+      throw new ServiceError(400, 'Elegí una de las opciones');
+    }
     const author = normalizeAuthor(input.author);
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
@@ -617,11 +675,13 @@ export class Service {
     return {
       id: prompt.id,
       text: prompt.text,
+      options: prompt.options,
       closed: prompt.closed,
       createdAt: prompt.createdAt,
       answerCount: suyas.length,
       myAnswer: mia?.text ?? null,
       answers: puedeVer ? suyas.map((answer) => toPublicAnswer(answer, viewerId)) : [],
+      tally: puedeVer ? contarPorOpcion(prompt, suyas) : [],
     };
   }
 
@@ -633,11 +693,13 @@ export class Service {
       return {
         id: prompt.id,
         text: prompt.text,
+        options: prompt.options,
         closed: prompt.closed,
         createdAt: prompt.createdAt,
         closedAt: prompt.closedAt,
         answerCount: suyas.length,
         answers: suyas.map((answer) => toPublicAnswer(answer, '')),
+        tally: contarPorOpcion(prompt, suyas),
       };
     });
   }

@@ -605,6 +605,129 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       expect(sinTexto.status).toBe(400);
     });
 
+    describe('opción múltiple', () => {
+      async function lanzarConOpciones(
+        room: { code: string; adminKey: string },
+        text: string,
+        options: string[],
+      ) {
+        const response = await request(app)
+          .post(`/api/rooms/${room.code}/prompts`)
+          .set('x-admin-key', room.adminKey)
+          .send({ text, options });
+        return response;
+      }
+
+      it('los alumnos reciben las opciones para elegir', async () => {
+        const room = await createRoom();
+        const creada = await lanzarConOpciones(room, '¿Qué forma de gobierno?', [
+          'República',
+          'Monarquía',
+          'Otra',
+        ]);
+        expect(creada.status).toBe(201);
+
+        const board = await tablero(room.code, 'v1');
+        expect(board.body.prompt.options).toEqual(['República', 'Monarquía', 'Otra']);
+      });
+
+      it('cuenta cuántos eligieron cada opción', async () => {
+        const room = await createRoom();
+        const prompt = await lanzarConOpciones(room, '¿Cuál preferís?', ['A', 'B']);
+        const id = prompt.body.id;
+
+        await responder(room.code, id, 'v1', 'A', 'Sofía');
+        await responder(room.code, id, 'v2', 'A', 'Bruno');
+        await responder(room.code, id, 'v3', 'B', 'Carla');
+
+        const panel = await request(app)
+          .get(`/api/rooms/${room.code}/admin`)
+          .set('x-admin-key', room.adminKey);
+        expect(panel.body.prompts[0].tally).toEqual([
+          { option: 'A', count: 2 },
+          { option: 'B', count: 1 },
+        ]);
+      });
+
+      it('rechaza una opción que no está en la lista', async () => {
+        const room = await createRoom();
+        const prompt = await lanzarConOpciones(room, '¿Cuál preferís?', ['A', 'B']);
+
+        // Una petición armada a mano no puede meter una opción inventada en el
+        // recuento: se valida contra la lista guardada, no contra el cliente.
+        const inventada = await responder(room.code, prompt.body.id, 'v1', 'C', 'Sofía');
+        expect(inventada.status).toBe(400);
+        expect(inventada.body.error).toMatch(/opciones/i);
+      });
+
+      it('no muestra el reparto hasta que uno responde', async () => {
+        const room = await createRoom();
+        const prompt = await lanzarConOpciones(room, '¿Cuál preferís?', ['A', 'B']);
+        await responder(room.code, prompt.body.id, 'v1', 'A', 'Sofía');
+
+        const mirando = await tablero(room.code, 'v2');
+        expect(mirando.body.prompt.answerCount).toBe(1);
+        expect(mirando.body.prompt.tally).toEqual([]);
+
+        await responder(room.code, prompt.body.id, 'v2', 'B', 'Bruno');
+        const yaVotó = await tablero(room.code, 'v2');
+        expect(yaVotó.body.prompt.tally).toEqual([
+          { option: 'A', count: 1 },
+          { option: 'B', count: 1 },
+        ]);
+      });
+
+      it('cambiar de opción mueve el voto en lugar de sumar otro', async () => {
+        const room = await createRoom();
+        const prompt = await lanzarConOpciones(room, '¿Cuál preferís?', ['A', 'B']);
+        await responder(room.code, prompt.body.id, 'v1', 'A', 'Sofía');
+        await responder(room.code, prompt.body.id, 'v1', 'B', 'Sofía');
+
+        const board = await tablero(room.code, 'v1');
+        expect(board.body.prompt.answerCount).toBe(1);
+        expect(board.body.prompt.tally).toEqual([
+          { option: 'A', count: 0 },
+          { option: 'B', count: 1 },
+        ]);
+      });
+
+      it('exige al menos dos opciones, o ninguna', async () => {
+        const room = await createRoom();
+        const unaSola = await lanzarConOpciones(room, '¿Cuál?', ['Única']);
+        expect(unaSola.status).toBe(400);
+
+        const demasiadas = await lanzarConOpciones(
+          room,
+          '¿Cuál?',
+          ['1', '2', '3', '4', '5', '6', '7'],
+        );
+        expect(demasiadas.status).toBe(400);
+
+        // Sin opciones sigue siendo una consigna abierta, que es lo de siempre.
+        const abierta = await lanzarConOpciones(room, '¿Qué opinan?', []);
+        expect(abierta.status).toBe(201);
+        expect(abierta.body.options).toEqual([]);
+      });
+
+      it('rechaza opciones repetidas', async () => {
+        const room = await createRoom();
+        const response = await lanzarConOpciones(room, '¿Cuál?', ['Sí', 'No', 'sí']);
+        expect(response.status).toBe(400);
+        expect(response.body.error).toMatch(/repetida/i);
+      });
+
+      it('una consigna abierta no trae reparto', async () => {
+        const room = await createRoom();
+        const prompt = await lanzar(room, '¿Qué entienden por república?');
+        await responder(room.code, prompt.id, 'v1', 'Lo que sea', 'Sofía');
+
+        const board = await tablero(room.code, 'v1');
+        expect(board.body.prompt.options).toEqual([]);
+        expect(board.body.prompt.tally).toEqual([]);
+        expect(board.body.prompt.myAnswer).toBe('Lo que sea');
+      });
+    });
+
     it('no responde a una consigna de otra sala', async () => {
       const propia = await createRoom('Propia');
       const ajena = await createRoom('Ajena');
