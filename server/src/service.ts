@@ -187,6 +187,25 @@ export class Service {
     );
   }
 
+  /**
+   * Las clases abiertas, para que el alumno elija sin tener que tipear código.
+   *
+   * Devuelve lo mínimo —código, nombre y fecha— y nunca la clave de admin:
+   * esto lo sirve una ruta pública, así que lo que salga de acá lo puede leer
+   * cualquiera que abra la portada. Tampoco calcula estadísticas: es la
+   * consulta más pedida de la app y no vale la pena recorrer las preguntas de
+   * cada sala para adornar un listado.
+   *
+   * Las salas cerradas no se listan: una clase terminada no es un lugar al que
+   * ofrecerle entrar a nadie.
+   */
+  async listOpenRooms(): Promise<Array<{ code: string; title: string; createdAt: number }>> {
+    const rooms = await this.repository.listRooms();
+    return rooms
+      .filter((room) => !room.closed)
+      .map((room) => ({ code: room.code, title: room.title, createdAt: room.createdAt }));
+  }
+
   // ---------------------------------------------------------------- salas
 
   async createRoom(title: string): Promise<{ room: Room; adminKey: string }> {

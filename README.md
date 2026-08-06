@@ -67,7 +67,10 @@ la variedad de lo que contestó cada uno.
 
 **Alumnos — la portada, sin contraseña**
 
-1. Entran con el código y ponen su nombre. **No hay preguntas anónimas**: el
+0. Abren la web y **eligen su clase de la lista**. No hace falta código: la
+   portada muestra todas las clases abiertas. El código sigue funcionando para
+   quien lo tenga, y es la forma de entrar a una clase ya cerrada.
+1. Ponen su nombre. **No hay preguntas anónimas**: el
    nombre es obligatorio y queda guardado en ese dispositivo, así se escribe una
    sola vez. Cada pregunta se muestra firmada.
 2. Escriben la pregunta. Si alguien ya preguntó lo mismo, la app avisa que se
@@ -175,6 +178,13 @@ completa, así que el build del cliente está armado para no depender de eso:
   moderar no incluye destruir la clase.
 - **Freno a la prueba de contraseñas.** Cada intento fallido cuesta 400 ms y, a
   los 10 fallos, ese cliente queda cortado 5 minutos.
+- **El listado de clases abiertas es público, a propósito.** La portada muestra
+  las clases sin pedir credenciales, para que el alumno no tenga que tipear un
+  código. La contrapartida es que cualquiera que llegue al dominio ve qué clases
+  hay y puede preguntar en ellas: el código dejó de ser una barrera de entrada.
+  Cerrar una clase la saca del listado. Si hiciera falta volver al modelo
+  anterior, alcanza con quitar la ruta `GET /api/rooms` y el listado de la
+  portada; nada más depende de eso.
 - **Sin preguntas anónimas** y con un tope de 4 preguntas por minuto y
   participante, contado contra la base para que valga aunque la petición caiga
   en otra instancia serverless.
@@ -387,7 +397,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 154 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 158 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 

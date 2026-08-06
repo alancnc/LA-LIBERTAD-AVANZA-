@@ -350,6 +350,21 @@ export function createApp(options: AppOptions = {}) {
     }),
   );
 
+  /**
+   * Listado público de clases abiertas, para que el alumno elija de una lista
+   * en lugar de tipear el código.
+   *
+   * Es deliberadamente público: entrar a una clase deja de requerir conocer el
+   * código. A cambio, cualquiera que llegue al dominio ve qué clases hay y
+   * puede preguntar en ellas.
+   */
+  api.get(
+    '/rooms',
+    route(async (_req, res) => {
+      res.json({ rooms: await service.listOpenRooms() });
+    }),
+  );
+
   api.get(
     '/rooms/:code',
     route(async (req, res) => {

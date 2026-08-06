@@ -81,6 +81,13 @@ export interface AdminResponse extends BoardResponse {
   prompts: AdminPrompt[];
 }
 
+/** Una clase abierta, tal como la ve un alumno en la portada. */
+export interface OpenRoom {
+  code: string;
+  title: string;
+  createdAt: number;
+}
+
 /** Una sala en el listado del panel general del docente. */
 export interface RoomSummary {
   code: string;
@@ -190,6 +197,10 @@ export const api = {
 
   createRoom: (title: string) =>
     call<{ code: string; title: string; adminKey: string }>('POST', '/rooms', { body: { title } }),
+
+  /** Clases abiertas, para que el alumno elija de una lista. Sin credenciales. */
+  listOpenRooms: () =>
+    call<{ rooms: OpenRoom[] }>('GET', '/rooms'),
 
   getRoom: (code: string) => call<RoomInfo>('GET', `/rooms/${code}`),
 

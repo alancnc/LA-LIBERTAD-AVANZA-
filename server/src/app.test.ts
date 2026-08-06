@@ -280,6 +280,54 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     });
   });
 
+  describe('listado público de clases', () => {
+    it('lista las clases abiertas sin pedir ninguna credencial', async () => {
+      const primera = await createRoom('Formación de Dirigentes — Clase 3');
+      const segunda = await createRoom('Oratoria — Clase 1');
+
+      const response = await request(app).get('/api/rooms');
+      expect(response.status).toBe(200);
+
+      const codigos = response.body.rooms.map((room: { code: string }) => room.code);
+      expect(codigos).toContain(primera.code);
+      expect(codigos).toContain(segunda.code);
+      expect(response.body.rooms[0].title).toBeTruthy();
+    });
+
+    it('nunca expone la clave de administrador', async () => {
+      await createRoom();
+      const response = await request(app).get('/api/rooms');
+      // Se revisa el cuerpo entero, no campo por campo: si mañana alguien suma
+      // un dato al listado, este test lo atrapa igual.
+      expect(JSON.stringify(response.body)).not.toContain('adminKey');
+      for (const room of response.body.rooms) {
+        expect(Object.keys(room).sort()).toEqual(['code', 'createdAt', 'title']);
+      }
+    });
+
+    it('una clase cerrada desaparece del listado', async () => {
+      const room = await createRoom('La que se cierra');
+      await request(app)
+        .patch(`/api/rooms/${room.code}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ closed: true });
+
+      const response = await request(app).get('/api/rooms');
+      const codigos = response.body.rooms.map((r: { code: string }) => r.code);
+      expect(codigos).not.toContain(room.code);
+
+      // Pero se sigue pudiendo entrar con el código, que es lo que permite ver
+      // una clase terminada sin ofrecérsela a todo el mundo en la portada.
+      expect((await request(app).get(`/api/rooms/${room.code}`)).status).toBe(200);
+    });
+
+    it('devuelve una lista vacía cuando no hay clases', async () => {
+      const response = await request(app).get('/api/rooms');
+      expect(response.status).toBe(200);
+      expect(response.body.rooms).toEqual([]);
+    });
+  });
+
   describe('eliminar una clase', () => {
     it('borra la clase con todo lo que juntó', async () => {
       const room = await createRoom('Clase vieja');

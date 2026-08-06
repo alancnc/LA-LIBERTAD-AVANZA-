@@ -310,6 +310,53 @@ textarea {
   text-transform: uppercase;
 }
 
+/* --------------------------------------------- clases abiertas en la portada */
+
+.rooms {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/*
+ * Objetivo de toque grande: el alumno elige desde el celular, apurado, en medio
+ * de la clase. Una tarjeta entera es mucho más fácil de acertar que un enlace.
+ */
+.room {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.room:hover {
+  border-color: var(--primary);
+  border-left-color: var(--primary-strong);
+}
+
+.room:active {
+  transform: scale(0.995);
+}
+
+.room__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--primary-strong);
+  overflow-wrap: anywhere;
+}
+
+.room__meta {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
 /* ---------------------------------------------------------------- métricas */
 
 .stats {
