@@ -27,6 +27,9 @@ export function AdminHome() {
   const [error, setError] = useState<string | null>(null);
   const [titulo, setTitulo] = useState('');
   const [creando, setCreando] = useState(false);
+  /** Código de la clase que está esperando confirmación para borrarse. */
+  const [porBorrar, setPorBorrar] = useState<string | null>(null);
+  const [borrando, setBorrando] = useState(false);
 
   useEffect(() => {
     void getConfig().then(
@@ -84,6 +87,22 @@ export function AdminHome() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo crear la clase');
       setCreando(false);
+    }
+  }
+
+  async function borrar(code: string) {
+    setBorrando(true);
+    setError(null);
+    try {
+      await api.deleteRoom(code);
+      setPorBorrar(null);
+      // Se relee del servidor en lugar de sacarla de la lista en pantalla: así
+      // lo que se ve es lo que quedó de verdad, no lo que suponemos.
+      await cargar();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo eliminar la clase');
+    } finally {
+      setBorrando(false);
     }
   }
 
@@ -241,14 +260,54 @@ export function AdminHome() {
                   {new Date(room.createdAt).toLocaleDateString()}
                 </span>
               </div>
-              <div className="cluster__actions">
-                <Link to={`/admin/${room.code}`} className="btn btn--small btn--primary">
-                  Abrir panel
-                </Link>
-                <Link to={`/r/${room.code}`} className="btn btn--small btn--ghost">
-                  Ver como alumno
-                </Link>
-              </div>
+              {porBorrar === room.code ? (
+                // Confirmación en la misma tarjeta, con el nombre y los números
+                // a la vista: borrar es definitivo y conviene ver qué se lleva
+                // puesto antes de apretar, no un "¿estás seguro?" a ciegas.
+                <div className="notice notice--danger" style={{ marginTop: '0.75rem' }}>
+                  <strong>¿Eliminar «{room.title}»?</strong>{' '}
+                  {room.questionCount === 0
+                    ? 'No tiene preguntas.'
+                    : room.questionCount === 1
+                      ? 'Tiene 1 pregunta.'
+                      : `Tiene ${room.questionCount} preguntas.`}{' '}
+                  Se borra todo y no se puede deshacer.
+                  <div className="cluster__actions">
+                    <button
+                      type="button"
+                      className="btn btn--small btn--danger-strong"
+                      onClick={() => void borrar(room.code)}
+                      disabled={borrando}
+                    >
+                      {borrando ? 'Eliminando...' : 'Sí, eliminar'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      onClick={() => setPorBorrar(null)}
+                      disabled={borrando}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="cluster__actions">
+                  <Link to={`/admin/${room.code}`} className="btn btn--small btn--primary">
+                    Abrir panel
+                  </Link>
+                  <Link to={`/r/${room.code}`} className="btn btn--small btn--ghost">
+                    Ver como alumno
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost btn--danger"
+                    onClick={() => setPorBorrar(room.code)}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              )}
             </div>
           </article>
         ))

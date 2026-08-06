@@ -165,9 +165,28 @@ textarea {
   font-size: 0.84rem;
 }
 
+.btn--danger {
+  color: var(--danger);
+}
+
 .btn--danger:hover:not(:disabled) {
   border-color: var(--danger);
-  color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Confirmar un borrado no puede parecerse a cualquier otro botón. */
+.btn--danger-strong {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+}
+
+.btn--danger-strong:hover:not(:disabled) {
+  background: #8f1e17;
+  border-color: #8f1e17;
+  color: #fff;
 }
 
 /* ------------------------------------------------------------ estructura */
@@ -267,6 +286,12 @@ textarea {
   color: var(--success);
 }
 
+.notice--danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* ------------------------------------------------------------- código sala */
 
 .code-display {
@@ -351,7 +376,8 @@ textarea {
 
 .cluster__rank {
   flex-shrink: 0;
-  width: 3.6rem;
+  /* Tiene que entrar "pendientes", la etiqueta más larga, sin partirse. */
+  width: 4rem;
   text-align: center;
 }
 
@@ -363,11 +389,11 @@ textarea {
 }
 
 .cluster__score-label {
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   line-height: 1.2;
   color: var(--text-dim);
   text-transform: uppercase;
-  /* La columna es angosta: sin esto "personas" se desborda sobre el título. */
+  /* La columna es angosta: sin esto la etiqueta se desborda sobre el título. */
   overflow-wrap: anywhere;
 }
 
@@ -831,7 +857,7 @@ textarea {
   }
 
   .cluster__rank {
-    width: 3.1rem;
+    width: 3.5rem;
   }
 
   .code-display {

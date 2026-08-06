@@ -69,6 +69,12 @@ export interface Repository {
   ): Promise<Room>;
 
   /**
+   * Borra la sala y todo lo que cuelga de ella: temas, preguntas, votos,
+   * consignas y respuestas. No hay papelera: lo que se borra, se fue.
+   */
+  deleteRoom(roomId: string): Promise<void>;
+
+  /**
    * Inserta una pregunta asignándola a un grupo.
    *
    * `assign` recibe los grupos que pueden absorberla y devuelve el elegido (o

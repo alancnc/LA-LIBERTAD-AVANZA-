@@ -490,6 +490,17 @@ export class Service {
     });
   }
 
+  /**
+   * Borra una clase con todo lo que juntó.
+   *
+   * No hay papelera ni borrado lógico: una clase terminada no tiene por qué
+   * quedar ocupando lugar, y guardar preguntas de alumnos "por las dudas" es
+   * justamente lo que no corresponde hacer con datos que ya no se usan.
+   */
+  async deleteRoom(room: Room): Promise<void> {
+    await this.repository.deleteRoom(room.id);
+  }
+
   // ------------------------------------------------- consignas del docente
 
   /**

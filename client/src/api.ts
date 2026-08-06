@@ -193,6 +193,12 @@ export const api = {
 
   getRoom: (code: string) => call<RoomInfo>('GET', `/rooms/${code}`),
 
+  /**
+   * Borra la clase con todo lo que juntó. La contraseña del docente viaja sola
+   * en cada llamada; la clave de la sala no alcanza para esto.
+   */
+  deleteRoom: (code: string) => call<void>('DELETE', `/rooms/${code}`),
+
   getBoard: (code: string) => call<BoardResponse>('GET', `/rooms/${code}/board`),
 
   getAdminBoard: (code: string, adminKey: string) =>

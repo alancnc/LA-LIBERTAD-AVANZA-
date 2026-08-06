@@ -280,6 +280,73 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     });
   });
 
+  describe('eliminar una clase', () => {
+    it('borra la clase con todo lo que juntó', async () => {
+      const room = await createRoom('Clase vieja');
+      await ask(room.code, '¿Cuándo es el parcial?', 'v1');
+      const prompt = await request(app)
+        .post(`/api/rooms/${room.code}/prompts`)
+        .set('x-admin-key', room.adminKey)
+        .send({ text: '¿Qué entienden por república?' });
+      await request(app)
+        .post(`/api/rooms/${room.code}/prompts/${prompt.body.id}/answers`)
+        .set('x-viewer-id', 'v1')
+        .send({ text: 'La división de poderes', author: 'Sofía' });
+
+      const borrada = await request(app)
+        .delete(`/api/rooms/${room.code}`)
+        .set('x-admin-password', 'clave-docente');
+      expect(borrada.status).toBe(204);
+
+      // La sala deja de existir para todo el mundo, no sólo del listado.
+      expect((await request(app).get(`/api/rooms/${room.code}`)).status).toBe(404);
+      expect((await request(app).get(`/api/rooms/${room.code}/board`)).status).toBe(404);
+
+      const listado = await request(app)
+        .get('/api/admin/rooms')
+        .set('x-admin-password', 'clave-docente');
+      expect(listado.body.rooms.some((r: { code: string }) => r.code === room.code)).toBe(false);
+    });
+
+    it('no borra sin la contraseña del docente', async () => {
+      const room = await createRoom();
+
+      const sinNada = await request(app).delete(`/api/rooms/${room.code}`);
+      expect(sinNada.status).toBe(403);
+
+      // La clave de la sala se comparte con un ayudante para que modere: sirve
+      // para el panel, pero no alcanza para borrar la clase entera.
+      const conClaveDeSala = await request(app)
+        .delete(`/api/rooms/${room.code}`)
+        .set('x-admin-key', room.adminKey);
+      expect(conClaveDeSala.status).toBe(403);
+
+      // Y la sala sigue estando.
+      expect((await request(app).get(`/api/rooms/${room.code}`)).status).toBe(200);
+    });
+
+    it('devuelve 404 si la clase no existe', async () => {
+      const response = await request(app)
+        .delete('/api/rooms/ZZZZZZ')
+        .set('x-admin-password', 'clave-docente');
+      expect(response.status).toBe(404);
+    });
+
+    it('borrar una clase no toca a las demás', async () => {
+      const borrar = await createRoom('La que se va');
+      const queda = await createRoom('La que queda');
+      await ask(queda.code, '¿Cuándo es el parcial?', 'v1');
+
+      await request(app)
+        .delete(`/api/rooms/${borrar.code}`)
+        .set('x-admin-password', 'clave-docente');
+
+      const board = await request(app).get(`/api/rooms/${queda.code}/board`);
+      expect(board.status).toBe(200);
+      expect(board.body.clusters).toHaveLength(1);
+    });
+  });
+
   describe('el docente pregunta y la clase responde', () => {
     /** Lanza una consigna con la clave de la sala. */
     async function lanzar(room: { code: string; adminKey: string }, text: string) {

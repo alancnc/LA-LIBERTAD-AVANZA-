@@ -382,6 +382,31 @@ export function createApp(options: AppOptions = {}) {
     }),
   );
 
+  /**
+   * Borra una clase entera.
+   *
+   * Es la acción más destructiva de la app, así que pide la contraseña del
+   * docente y no alcanza con la clave de la sala: esa clave se comparte con un
+   * ayudante para que modere, y moderar no incluye borrar la clase. Cuando no
+   * hay contraseña configurada (desarrollo local) se cae a la clave de sala,
+   * que es la única credencial que existe en ese caso.
+   */
+  api.delete(
+    '/rooms/:code',
+    route(async (req, res) => {
+      let room;
+      if (service.masterAdminEnabled) {
+        await conFreno(req, () => service.requireMasterAdmin(adminPasswordOf(req)));
+        room = await service.getRoomByCode(param(req, 'code'));
+      } else {
+        room = await roomAdmin(req);
+      }
+
+      await service.deleteRoom(room);
+      res.status(204).end();
+    }),
+  );
+
   /** Vista pública: el tablero tal como lo ven los alumnos. */
   api.get(
     '/rooms/:code/board',

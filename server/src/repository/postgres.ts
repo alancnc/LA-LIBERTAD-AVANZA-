@@ -414,6 +414,16 @@ export class PostgresRepository implements Repository {
   }
 
   /**
+   * Borra la sala. Temas, preguntas, votos, consignas y respuestas se van
+   * detrás por los ON DELETE CASCADE del esquema, sin borrados manuales que
+   * puedan dejar filas huérfanas si alguno falla a mitad de camino.
+   */
+  async deleteRoom(roomId: string): Promise<void> {
+    const result = await this.pool.query('DELETE FROM rooms WHERE id = $1', [roomId]);
+    if (!result.rowCount) throw new Error(`Sala inexistente: ${roomId}`);
+  }
+
+  /**
    * Inserta la pregunta dentro de una transacción que primero toma el lock de
    * la fila de la sala.
    *

@@ -107,6 +107,17 @@ export class JsonRepository implements Repository {
     return room;
   }
 
+  async deleteRoom(roomId: string): Promise<void> {
+    const room = this.data.rooms.find((item) => item.id === roomId);
+    if (!room) throw new Error(`Sala inexistente: ${roomId}`);
+    this.data.rooms = this.data.rooms.filter((item) => item.id !== roomId);
+    this.data.clusters = this.data.clusters.filter((item) => item.roomId !== roomId);
+    this.data.questions = this.data.questions.filter((item) => item.roomId !== roomId);
+    this.data.prompts = this.data.prompts.filter((item) => item.roomId !== roomId);
+    this.data.answers = this.data.answers.filter((item) => item.roomId !== roomId);
+    this.persist();
+  }
+
   async addQuestion(
     input: CreateQuestionInput,
     assign: (candidates: ClusterWithTexts[]) => { clusterId: string | null; score: number },

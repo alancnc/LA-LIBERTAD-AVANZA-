@@ -169,8 +169,10 @@ completa, así que el build del cliente está armado para no depender de eso:
 
 ### Seguridad de la aplicación
 
-- **Crear clases exige la contraseña del docente.** Sin eso, cualquiera con la
-  URL del despliegue podía abrir salas sin límite.
+- **Crear y borrar clases exige la contraseña del docente.** Sin eso, cualquiera
+  con la URL del despliegue podía abrir salas sin límite. Borrar, además, no
+  acepta la clave de la sala: esa se comparte con un ayudante para moderar, y
+  moderar no incluye destruir la clase.
 - **Freno a la prueba de contraseñas.** Cada intento fallido cuesta 400 ms y, a
   los 10 fallos, ese cliente queda cortado 5 minutos.
 - **Sin preguntas anónimas** y con un tope de 4 preguntas por minuto y
@@ -318,6 +320,9 @@ falla si un cambio empeora estas métricas.
 - **Proyectar** la sala: código en grande y ranking en vivo, para el proyector.
 - **Preguntarle a la clase**: lanzar una consigna, ver las respuestas llegar,
   cerrarla, ocultar una respuesta o borrarla con todo lo que juntó.
+- **Eliminar una clase** que ya no se usa, con todo lo que juntó. Pide
+  confirmación mostrando cuántas preguntas se pierden, y exige la contraseña
+  del docente: la clave de una sala sirve para moderarla, no para borrarla.
 
 ## Estructura
 
@@ -382,7 +387,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 150 tests: agrupamiento, significado, calidad, API y acceso
+npm test         # 154 tests: agrupamiento, significado, calidad, API y acceso
 npm run typecheck
 ```
 
