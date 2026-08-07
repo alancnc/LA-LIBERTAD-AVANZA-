@@ -70,9 +70,8 @@ En el panel, cada pregunta aparece en **Preguntas anteriores** con su estado
 (abierta o cerrada), la fecha, cuántos contestaron, qué opción ganó y el detalle
 de quién eligió qué. Desde ahí se cierra, se reabre o se borra cada una.
 
-La pantalla de proyección muestra la última pregunta abierta. Mientras esté abierta, la pantalla de
-proyección muestra esa pregunta y el contador de respuestas en lugar del
-ranking.
+La pantalla de proyección muestra la última pregunta abierta —con sus opciones
+y el contador de respuestas— en lugar del ranking de dudas.
 
 Las respuestas no se agrupan, a diferencia de las preguntas de los alumnos. Es
 deliberado: las preguntas se agrupan porque son muchas versiones de lo mismo y
