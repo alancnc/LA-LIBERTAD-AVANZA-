@@ -23,9 +23,11 @@ export function ProjectionPage() {
     .slice(0, VISIBLE_TOPICS);
 
   // Con una consigna abierta, la pantalla es esa consigna: es lo que la clase
-  // tiene que estar mirando, y el ranking de dudas puede esperar.
-  const prompt = data?.prompt ?? null;
-  if (prompt && !prompt.closed) {
+  // tiene que estar mirando, y el ranking de dudas puede esperar. Si hay varias
+  // abiertas se proyecta la última lanzada, que es la que el docente acaba de
+  // poner sobre la mesa.
+  const prompt = (data?.prompts ?? []).find((item) => !item.closed) ?? null;
+  if (prompt) {
     return (
       <div className="projection">
         <img src="/logo.png" alt="Escuela de Dirigentes" className="projection__logo" />

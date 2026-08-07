@@ -573,8 +573,11 @@ export class Service {
   // ------------------------------------------------- consignas del docente
 
   /**
-   * Lanza una consigna a la clase. Cierra automáticamente la anterior: la
-   * pantalla del alumno muestra una sola, la que está viva ahora.
+   * Lanza una consigna a la clase.
+   *
+   * Las anteriores quedan abiertas: la clase ve todas las preguntas del docente
+   * y responde las que quiera. Cerrarlas es una decisión suya, no un efecto
+   * secundario de lanzar la siguiente.
    */
   async createPrompt(room: Room, text: string, options: string[] = []): Promise<Prompt> {
     if (room.closed) {
@@ -657,32 +660,34 @@ export class Service {
   }
 
   /**
-   * La consigna vigente tal como la ve un alumno.
+   * Todas las preguntas del docente, tal como las ve un alumno, de la más
+   * reciente a la más vieja.
    *
-   * Las respuestas ajenas se entregan sólo si el visitante ya respondió o si la
-   * consigna está cerrada. Ver lo que contestaron los demás antes de escribir
-   * convierte la consigna en un ejercicio de copiar al primero.
+   * Las respuestas ajenas y el reparto de votos se entregan por consigna, sólo
+   * si el visitante ya respondió esa o si el docente la cerró. Ver lo que
+   * contestaron los demás antes de contestar convierte la consigna en un
+   * ejercicio de copiar al primero.
    */
-  async getLivePrompt(room: Room, viewerId: string): Promise<LivePrompt | null> {
+  async getLivePrompts(room: Room, viewerId: string): Promise<LivePrompt[]> {
     const { prompts, answers } = await this.repository.getPromptData(room.id);
-    const prompt = prompts[0];
-    if (!prompt) return null;
 
-    const suyas = answers.filter((answer) => answer.promptId === prompt.id);
-    const mia = suyas.find((answer) => answer.voterId === viewerId) ?? null;
-    const puedeVer = mia !== null || prompt.closed;
+    return prompts.map((prompt) => {
+      const suyas = answers.filter((answer) => answer.promptId === prompt.id);
+      const mia = suyas.find((answer) => answer.voterId === viewerId) ?? null;
+      const puedeVer = mia !== null || prompt.closed;
 
-    return {
-      id: prompt.id,
-      text: prompt.text,
-      options: prompt.options,
-      closed: prompt.closed,
-      createdAt: prompt.createdAt,
-      answerCount: suyas.length,
-      myAnswer: mia?.text ?? null,
-      answers: puedeVer ? suyas.map((answer) => toPublicAnswer(answer, viewerId)) : [],
-      tally: puedeVer ? contarPorOpcion(prompt, suyas) : [],
-    };
+      return {
+        id: prompt.id,
+        text: prompt.text,
+        options: prompt.options,
+        closed: prompt.closed,
+        createdAt: prompt.createdAt,
+        answerCount: suyas.length,
+        myAnswer: mia?.text ?? null,
+        answers: puedeVer ? suyas.map((answer) => toPublicAnswer(answer, viewerId)) : [],
+        tally: puedeVer ? contarPorOpcion(prompt, suyas) : [],
+      };
+    });
   }
 
   /** Todas las consignas con sus respuestas, para el panel del docente. */

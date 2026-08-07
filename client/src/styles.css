@@ -841,6 +841,11 @@ textarea {
   color: var(--text-dim);
 }
 
+.historial__abierta {
+  color: var(--success);
+  font-weight: 700;
+}
+
 .historial__cuerpo {
   padding: 0 0.9rem 0.9rem;
   border-top: 1px solid var(--primary-softer);

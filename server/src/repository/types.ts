@@ -113,12 +113,8 @@ export interface Repository {
   // ------------------------------------------------- consignas del docente
 
   /**
-   * Guarda una consigna nueva y cierra la que estuviera abierta.
-   *
-   * Las dos cosas van juntas a propósito: la pantalla del alumno muestra "la"
-   * consigna vigente, así que sólo puede haber una abierta por sala. Dejarlo en
-   * manos de quien llama abriría la puerta a dos consignas activas si dos
-   * pedidos llegan a la vez.
+   * Guarda una consigna nueva. Las anteriores no se tocan: pueden convivir
+   * varias abiertas y el alumno las ve y responde todas.
    */
   createPrompt(prompt: Prompt): Promise<Prompt>;
   getPrompt(roomId: string, promptId: string): Promise<Prompt | null>;

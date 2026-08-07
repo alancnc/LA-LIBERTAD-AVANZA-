@@ -33,7 +33,10 @@ export function RoomPage() {
   const { data, error, loading, connected, refresh } = useLive<BoardResponse>(code, fetcher);
 
   const closed = data?.room.closed ?? false;
-  const prompt = data?.prompt ?? null;
+  const prompts = data?.prompts ?? [];
+  /** La más reciente sin responder: es la que hay que anunciar al entrar. */
+  const pendiente = prompts.find((item) => !item.closed && item.myAnswer === null) ?? null;
+  const sinResponder = prompts.filter((item) => !item.closed && item.myAnswer === null).length;
   const nombreLimpio = author.trim().replace(/\s+/g, ' ');
   const nombreValido = nombreLimpio.length >= MIN_NAME_LENGTH;
 
@@ -148,13 +151,16 @@ export function RoomPage() {
       ) : !identificado ? (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h2 style={{ marginTop: 0, fontSize: '1.1rem' }}>
-            {prompt && !prompt.closed
-              ? 'El docente lanzó una pregunta. ¿Quién sos?'
+            {pendiente
+              ? sinResponder === 1
+                ? 'El docente lanzó una pregunta. ¿Quién sos?'
+                : `El docente lanzó ${sinResponder} preguntas. ¿Quién sos?`
               : 'Antes de preguntar, ¿quién sos?'}
           </h2>
-          {prompt && !prompt.closed && (
+          {pendiente && (
             <p className="notice" style={{ marginTop: 0 }}>
-              «{prompt.text}»
+              «{pendiente.text}»
+              {sinResponder > 1 && ` y ${sinResponder - 1} más`}
             </p>
           )}
           <p className="muted">
@@ -187,14 +193,30 @@ export function RoomPage() {
         </div>
       ) : (
         <>
-          {prompt && (
+          {prompts.length > 0 && (
+            <section style={{ marginBottom: '0.5rem' }}>
+              <h2 style={{ fontSize: '1.1rem', marginBottom: '0.2rem' }}>
+                {prompts.length === 1
+                  ? 'Lo que preguntó el docente'
+                  : `Preguntas del docente (${prompts.length})`}
+              </h2>
+              {sinResponder > 0 && (
+                <p className="muted" style={{ marginTop: 0 }}>
+                  Te {sinResponder === 1 ? 'queda 1 sin responder' : `quedan ${sinResponder} sin responder`}.
+                </p>
+              )}
+            </section>
+          )}
+
+          {prompts.map((item) => (
             <PromptCard
+              key={item.id}
               code={code}
-              prompt={prompt}
+              prompt={item}
               author={nombreLimpio}
               onAnswered={refresh}
             />
-          )}
+          ))}
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <div className="row" style={{ marginBottom: '0.9rem' }}>
               <span className="muted">

@@ -422,16 +422,16 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       const prompt = await lanzar(room, '¿Qué entienden por república?');
 
       const board = await tablero(room.code, 'alumna');
-      expect(board.body.prompt.id).toBe(prompt.id);
-      expect(board.body.prompt.text).toBe('¿Qué entienden por república?');
-      expect(board.body.prompt.closed).toBe(false);
-      expect(board.body.prompt.myAnswer).toBeNull();
+      expect(board.body.prompts[0].id).toBe(prompt.id);
+      expect(board.body.prompts[0].text).toBe('¿Qué entienden por república?');
+      expect(board.body.prompts[0].closed).toBe(false);
+      expect(board.body.prompts[0].myAnswer).toBeNull();
     });
 
     it('sin consigna lanzada, el tablero no trae ninguna', async () => {
       const room = await createRoom();
       const board = await tablero(room.code, 'alumna');
-      expect(board.body.prompt).toBeNull();
+      expect(board.body.prompts).toEqual([]);
     });
 
     it('un alumno no puede lanzar preguntas a la clase', async () => {
@@ -456,9 +456,9 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       expect(enviada.status).toBe(201);
 
       const board = await tablero(room.code, 'v1');
-      expect(board.body.prompt.myAnswer).toBe('La división de poderes');
-      expect(board.body.prompt.answers[0].author).toBe('Sofía Pérez');
-      expect(board.body.prompt.answers[0].mine).toBe(true);
+      expect(board.body.prompts[0].myAnswer).toBe('La división de poderes');
+      expect(board.body.prompts[0].answers[0].author).toBe('Sofía Pérez');
+      expect(board.body.prompts[0].answers[0].mine).toBe(true);
     });
 
     it('no acepta respuestas anónimas', async () => {
@@ -477,12 +477,12 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       // Quien todavía no respondió ve cuántos van, pero no qué dijeron: si no,
       // la consigna mide quién copió primero en lugar de qué piensa la clase.
       const mirando = await tablero(room.code, 'v2');
-      expect(mirando.body.prompt.answerCount).toBe(1);
-      expect(mirando.body.prompt.answers).toEqual([]);
+      expect(mirando.body.prompts[0].answerCount).toBe(1);
+      expect(mirando.body.prompts[0].answers).toEqual([]);
 
       await responder(room.code, prompt.id, 'v2', 'Que se vota', 'Bruno');
       const yaRespondio = await tablero(room.code, 'v2');
-      expect(yaRespondio.body.prompt.answers).toHaveLength(2);
+      expect(yaRespondio.body.prompts[0].answers).toHaveLength(2);
     });
 
     it('con la consigna cerrada las respuestas quedan a la vista de todos', async () => {
@@ -496,8 +496,8 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         .send({ closed: true });
 
       const mirando = await tablero(room.code, 'v2');
-      expect(mirando.body.prompt.closed).toBe(true);
-      expect(mirando.body.prompt.answers).toHaveLength(1);
+      expect(mirando.body.prompts[0].closed).toBe(true);
+      expect(mirando.body.prompts[0].answers).toHaveLength(1);
 
       const tarde = await responder(room.code, prompt.id, 'v2', 'Llego tarde', 'Bruno');
       expect(tarde.status).toBe(409);
@@ -510,21 +510,70 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       await responder(room.code, prompt.id, 'v1', 'La división de poderes', 'Sofía');
 
       const board = await tablero(room.code, 'v1');
-      expect(board.body.prompt.answerCount).toBe(1);
-      expect(board.body.prompt.myAnswer).toBe('La división de poderes');
+      expect(board.body.prompts[0].answerCount).toBe(1);
+      expect(board.body.prompts[0].myAnswer).toBe('La división de poderes');
     });
 
-    it('lanzar una pregunta nueva cierra la anterior', async () => {
+    it('el alumno ve todas las preguntas del docente, no sólo la última', async () => {
+      const room = await createRoom();
+      const primera = await lanzar(room, '¿Qué entienden por república?');
+      const segunda = await lanzar(room, '¿Y por democracia?');
+      const tercera = await lanzar(room, '¿Y por federalismo?');
+
+      const board = await tablero(room.code, 'v1');
+      // De la más nueva a la más vieja.
+      expect(board.body.prompts.map((p: { id: string }) => p.id)).toEqual([
+        tercera.id,
+        segunda.id,
+        primera.id,
+      ]);
+    });
+
+    it('lanzar una pregunta nueva no cierra las anteriores', async () => {
+      const room = await createRoom();
+      const primera = await lanzar(room, '¿Qué entienden por república?');
+      await lanzar(room, '¿Y por democracia?');
+
+      // La primera sigue abierta y se puede responder: la clase resuelve todas
+      // las preguntas del docente, no solamente la última que lanzó.
+      const board = await tablero(room.code, 'v1');
+      expect(board.body.prompts.every((p: { closed: boolean }) => !p.closed)).toBe(true);
+
+      const aLaPrimera = await responder(room.code, primera.id, 'v1', 'La división', 'Sofía');
+      expect(aLaPrimera.status).toBe(201);
+    });
+
+    it('cada consigna lleva su propia respuesta', async () => {
       const room = await createRoom();
       const primera = await lanzar(room, '¿Qué entienden por república?');
       const segunda = await lanzar(room, '¿Y por democracia?');
 
-      // El alumno ve la nueva; la anterior ya no acepta respuestas.
-      const board = await tablero(room.code, 'v1');
-      expect(board.body.prompt.id).toBe(segunda.id);
+      await responder(room.code, primera.id, 'v1', 'La división de poderes', 'Sofía');
+      await responder(room.code, segunda.id, 'v1', 'Que se vota', 'Sofía');
 
-      const tarde = await responder(room.code, primera.id, 'v1', 'Tarde', 'Sofía');
-      expect(tarde.status).toBe(409);
+      const board = await tablero(room.code, 'v1');
+      const porId = new Map(
+        board.body.prompts.map((p: { id: string; myAnswer: string }) => [p.id, p.myAnswer]),
+      );
+      expect(porId.get(primera.id)).toBe('La división de poderes');
+      expect(porId.get(segunda.id)).toBe('Que se vota');
+    });
+
+    it('cerrar una consigna no toca a las demás', async () => {
+      const room = await createRoom();
+      const primera = await lanzar(room, '¿Qué entienden por república?');
+      const segunda = await lanzar(room, '¿Y por democracia?');
+
+      await request(app)
+        .patch(`/api/rooms/${room.code}/prompts/${primera.id}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ closed: true });
+
+      const cerrada = await responder(room.code, primera.id, 'v1', 'Tarde', 'Sofía');
+      expect(cerrada.status).toBe(409);
+
+      const abierta = await responder(room.code, segunda.id, 'v1', 'A tiempo', 'Sofía');
+      expect(abierta.status).toBe(201);
     });
 
     it('el panel del docente muestra todas las respuestas', async () => {
@@ -571,7 +620,7 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       expect(borrada.status).toBe(204);
 
       const board = await tablero(room.code, 'v1');
-      expect(board.body.prompt).toBeNull();
+      expect(board.body.prompts).toEqual([]);
     });
 
     it('una sala cerrada no admite consignas ni respuestas', async () => {
@@ -628,7 +677,7 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         expect(creada.status).toBe(201);
 
         const board = await tablero(room.code, 'v1');
-        expect(board.body.prompt.options).toEqual(['República', 'Monarquía', 'Otra']);
+        expect(board.body.prompts[0].options).toEqual(['República', 'Monarquía', 'Otra']);
       });
 
       it('cuenta cuántos eligieron cada opción', async () => {
@@ -666,12 +715,12 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         await responder(room.code, prompt.body.id, 'v1', 'A', 'Sofía');
 
         const mirando = await tablero(room.code, 'v2');
-        expect(mirando.body.prompt.answerCount).toBe(1);
-        expect(mirando.body.prompt.tally).toEqual([]);
+        expect(mirando.body.prompts[0].answerCount).toBe(1);
+        expect(mirando.body.prompts[0].tally).toEqual([]);
 
         await responder(room.code, prompt.body.id, 'v2', 'B', 'Bruno');
         const yaVotó = await tablero(room.code, 'v2');
-        expect(yaVotó.body.prompt.tally).toEqual([
+        expect(yaVotó.body.prompts[0].tally).toEqual([
           { option: 'A', count: 1 },
           { option: 'B', count: 1 },
         ]);
@@ -684,8 +733,8 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         await responder(room.code, prompt.body.id, 'v1', 'B', 'Sofía');
 
         const board = await tablero(room.code, 'v1');
-        expect(board.body.prompt.answerCount).toBe(1);
-        expect(board.body.prompt.tally).toEqual([
+        expect(board.body.prompts[0].answerCount).toBe(1);
+        expect(board.body.prompts[0].tally).toEqual([
           { option: 'A', count: 0 },
           { option: 'B', count: 1 },
         ]);
@@ -722,9 +771,9 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         await responder(room.code, prompt.id, 'v1', 'Lo que sea', 'Sofía');
 
         const board = await tablero(room.code, 'v1');
-        expect(board.body.prompt.options).toEqual([]);
-        expect(board.body.prompt.tally).toEqual([]);
-        expect(board.body.prompt.myAnswer).toBe('Lo que sea');
+        expect(board.body.prompts[0].options).toEqual([]);
+        expect(board.body.prompts[0].tally).toEqual([]);
+        expect(board.body.prompts[0].myAnswer).toBe('Lo que sea');
       });
     });
 

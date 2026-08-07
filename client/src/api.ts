@@ -85,10 +85,18 @@ export interface AdminPrompt {
 export interface BoardResponse {
   room: RoomInfo;
   clusters: RankedCluster[];
-  prompt: LivePrompt | null;
+  /** Todas las preguntas del docente, de la más nueva a la más vieja. */
+  prompts: LivePrompt[];
 }
 
-export interface AdminResponse extends BoardResponse {
+/**
+ * El tablero del docente. No extiende `BoardResponse` porque `prompts` no es lo
+ * mismo en los dos: el alumno recibe `LivePrompt` (con lo que respondió él y
+ * sin lo ajeno hasta que responde) y el docente `AdminPrompt` (con todo).
+ */
+export interface AdminResponse {
+  room: RoomInfo;
+  clusters: RankedCluster[];
   stats: RoomStats;
   prompts: AdminPrompt[];
 }

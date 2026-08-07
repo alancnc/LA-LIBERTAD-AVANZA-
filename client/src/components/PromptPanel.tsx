@@ -31,6 +31,7 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
   const actual = prompts[0] ?? null;
   const anteriores = prompts.slice(1);
   const respuestasTotales = prompts.reduce((suma, prompt) => suma + prompt.answerCount, 0);
+  const abiertasCuenta = prompts.filter((prompt) => !prompt.closed).length;
 
   async function correr(accion: () => Promise<unknown>) {
     setError(null);
@@ -99,7 +100,8 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
             />
             <p className="muted" style={{ margin: '0.3rem 0 0' }}>
               {text.length}/{MAX_PROMPT_LENGTH}
-              {actual && !actual.closed && ' · Al lanzar esta, se cierra la anterior.'}
+              {abiertasCuenta > 0 &&
+                ` · Las ${abiertasCuenta === 1 ? 'anterior sigue abierta' : `${abiertasCuenta} anteriores siguen abiertas`}: los alumnos pueden responderlas.`}
             </p>
           </div>
 
@@ -280,6 +282,10 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
                   <span className="historial__texto">
                     <span className="historial__pregunta">{prompt.text}</span>
                     <span className="historial__resumen">
+                      <span className={prompt.closed ? '' : 'historial__abierta'}>
+                        {prompt.closed ? 'cerrada' : 'abierta'}
+                      </span>
+                      {' · '}
                       {prompt.answerCount}{' '}
                       {prompt.answerCount === 1 ? 'respuesta' : 'respuestas'}
                       {/* Con opciones, lo que se quiere de un vistazo es qué
@@ -316,6 +322,17 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
                     )}
 
                     <div className="row" style={{ marginTop: '0.85rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={() =>
+                          void correr(() =>
+                            api.setPromptClosed(code, prompt.id, !prompt.closed, adminKey),
+                          )
+                        }
+                      >
+                        {prompt.closed ? 'Reabrir' : 'Cerrar respuestas'}
+                      </button>
                       <button
                         type="button"
                         className="btn btn--small btn--danger"

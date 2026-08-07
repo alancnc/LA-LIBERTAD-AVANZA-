@@ -285,13 +285,6 @@ export class JsonRepository implements Repository {
   // ------------------------------------------------- consignas del docente
 
   async createPrompt(prompt: Prompt): Promise<Prompt> {
-    const ahora = Date.now();
-    for (const anterior of this.data.prompts) {
-      if (anterior.roomId === prompt.roomId && !anterior.closed) {
-        anterior.closed = true;
-        anterior.closedAt = ahora;
-      }
-    }
     this.data.prompts.push(prompt);
     this.persist();
     return prompt;

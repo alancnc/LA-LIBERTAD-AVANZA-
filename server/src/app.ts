@@ -428,15 +428,15 @@ export function createApp(options: AppOptions = {}) {
     route(async (req, res) => {
       const room = await service.getRoomByCode(param(req, 'code'));
       const viewer = viewerId(req);
-      const [clusters, prompt] = await Promise.all([
+      const [clusters, prompts] = await Promise.all([
         service.getBoard(room, viewer),
-        service.getLivePrompt(room, viewer),
+        service.getLivePrompts(room, viewer),
       ]);
       res.json({
         room: { code: room.code, title: room.title, closed: room.closed },
         clusters,
-        // La consigna vigente del docente, o null si no lanzó ninguna.
-        prompt,
+        // Todas las preguntas del docente, de la más nueva a la más vieja.
+        prompts,
       });
     }),
   );

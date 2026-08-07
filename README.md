@@ -61,9 +61,16 @@ contesten todos. Va en la misma sala y con el mismo código:
    Al cerrarla, todo queda a la vista de todos.
 4. Volver a responder corrige la respuesta anterior: una persona, una respuesta.
 
-Hay una sola consigna viva por sala; lanzar una nueva cierra la anterior, que
-queda archivada en **Preguntas anteriores**, con su fecha, cuántos contestaron,
-qué opción ganó y el detalle de quién eligió qué. Mientras esté abierta, la pantalla de
+**Pueden convivir varias preguntas abiertas.** Lanzar una nueva no cierra las
+anteriores: el alumno entra y se encuentra con todas las que lanzó el docente,
+y responde las que quiera, como un cuestionario. Cerrar una es una decisión del
+docente, no un efecto secundario de lanzar la siguiente.
+
+En el panel, cada pregunta aparece en **Preguntas anteriores** con su estado
+(abierta o cerrada), la fecha, cuántos contestaron, qué opción ganó y el detalle
+de quién eligió qué. Desde ahí se cierra, se reabre o se borra cada una.
+
+La pantalla de proyección muestra la última pregunta abierta. Mientras esté abierta, la pantalla de
 proyección muestra esa pregunta y el contador de respuestas en lugar del
 ranking.
 
@@ -408,7 +415,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 186 tests: agrupamiento, significado, calidad, API, acceso y sorteo
+npm test         # 192 tests: agrupamiento, significado, calidad, API, acceso y sorteo
 npm run typecheck
 ```
 

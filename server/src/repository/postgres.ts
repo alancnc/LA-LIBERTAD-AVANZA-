@@ -729,39 +729,22 @@ export class PostgresRepository implements Repository {
   // ------------------------------------------------- consignas del docente
 
   /**
-   * Inserta la consigna y cierra la anterior en la misma transacción.
-   *
-   * Si fueran dos operaciones sueltas, dos pedidos simultáneos podrían dejar
-   * dos consignas abiertas a la vez, y la pantalla del alumno muestra una sola.
+   * Agrega una consigna. Las anteriores siguen abiertas: la clase ve todas las
+   * preguntas del docente y puede responder cualquiera que él no haya cerrado.
    */
   async createPrompt(prompt: Prompt): Promise<Prompt> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('SELECT id FROM rooms WHERE id = $1 FOR UPDATE', [prompt.roomId]);
-      await client.query(
-        'UPDATE prompts SET closed = TRUE, closed_at = $2 WHERE room_id = $1 AND closed = FALSE',
-        [prompt.roomId, Date.now()],
-      );
-      await client.query(
-        `INSERT INTO prompts (id, room_id, text, closed, created_at, closed_at, options)
-         VALUES ($1, $2, $3, FALSE, $4, NULL, $5)`,
-        [
-          prompt.id,
-          prompt.roomId,
-          prompt.text,
-          prompt.createdAt,
-          prompt.options.length > 0 ? JSON.stringify(prompt.options) : null,
-        ],
-      );
-      await client.query('COMMIT');
-      return prompt;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await this.pool.query(
+      `INSERT INTO prompts (id, room_id, text, closed, created_at, closed_at, options)
+       VALUES ($1, $2, $3, FALSE, $4, NULL, $5)`,
+      [
+        prompt.id,
+        prompt.roomId,
+        prompt.text,
+        prompt.createdAt,
+        prompt.options.length > 0 ? JSON.stringify(prompt.options) : null,
+      ],
+    );
+    return prompt;
   }
 
   async getPrompt(roomId: string, promptId: string): Promise<Prompt | null> {
