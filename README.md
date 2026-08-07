@@ -62,7 +62,8 @@ contesten todos. Va en la misma sala y con el mismo código:
 4. Volver a responder corrige la respuesta anterior: una persona, una respuesta.
 
 Hay una sola consigna viva por sala; lanzar una nueva cierra la anterior, que
-queda archivada con sus respuestas. Mientras esté abierta, la pantalla de
+queda archivada en **Preguntas anteriores**, con su fecha, cuántos contestaron,
+qué opción ganó y el detalle de quién eligió qué. Mientras esté abierta, la pantalla de
 proyección muestra esa pregunta y el contador de respuestas en lugar del
 ranking.
 

@@ -30,6 +30,7 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
 
   const actual = prompts[0] ?? null;
   const anteriores = prompts.slice(1);
+  const respuestasTotales = prompts.reduce((suma, prompt) => suma + prompt.answerCount, 0);
 
   async function correr(accion: () => Promise<unknown>) {
     setError(null);
@@ -58,6 +59,15 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
 
   function cambiarOpcion(indice: number, valor: string) {
     setOpciones((actuales) => actuales.map((item, i) => (i === indice ? valor : item)));
+  }
+
+  /** La opción más elegida, para resumir de un vistazo cómo salió. */
+  function mayoria(prompt: AdminPrompt) {
+    if (prompt.tally.length === 0) return null;
+    const lider = prompt.tally.reduce((mejor, item) =>
+      item.count > mejor.count ? item : mejor,
+    );
+    return lider.count > 0 ? lider : null;
   }
 
   function alternar(promptId: string) {
@@ -246,29 +256,83 @@ export function PromptPanel({ code, adminKey, prompts, roomClosed, onChange }: P
       )}
 
       {anteriores.length > 0 && (
-        <div style={{ marginTop: '1.25rem' }}>
-          <h3 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>Preguntas anteriores</h3>
-          {anteriores.map((prompt) => (
-            <div key={prompt.id} className="prompt__previous">
-              <button
-                type="button"
-                className="btn btn--ghost btn--small"
-                onClick={() => alternar(prompt.id)}
-              >
-                {abiertas.has(prompt.id) ? '▾' : '▸'} {prompt.text} ({prompt.answerCount})
-              </button>
-              {abiertas.has(prompt.id) && (
-                <ul className="prompt__answers">
-                  {prompt.answers.map((answer) => (
-                    <li className="prompt__answer" key={answer.id}>
-                      <span className="prompt__answer-author">{answer.author}</span>
-                      <span>{answer.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
+        <div className="historial">
+          <div className="historial__encabezado">
+            <h3>Preguntas anteriores</h3>
+            <span className="muted">
+              {prompts.length} {prompts.length === 1 ? 'lanzada' : 'lanzadas'} ·{' '}
+              {respuestasTotales} {respuestasTotales === 1 ? 'respuesta' : 'respuestas'} en total
+            </span>
+          </div>
+
+          {anteriores.map((prompt) => {
+            const desplegada = abiertas.has(prompt.id);
+            const masVotada = mayoria(prompt);
+            return (
+              <article key={prompt.id} className="historial__item">
+                <button
+                  type="button"
+                  className="historial__cabecera"
+                  onClick={() => alternar(prompt.id)}
+                  aria-expanded={desplegada}
+                >
+                  <span className="historial__flecha">{desplegada ? '▾' : '▸'}</span>
+                  <span className="historial__texto">
+                    <span className="historial__pregunta">{prompt.text}</span>
+                    <span className="historial__resumen">
+                      {prompt.answerCount}{' '}
+                      {prompt.answerCount === 1 ? 'respuesta' : 'respuestas'}
+                      {/* Con opciones, lo que se quiere de un vistazo es qué
+                          ganó; sin opciones no hay resumen posible. */}
+                      {masVotada && ` · ganó «${masVotada.option}» con ${masVotada.count}`}
+                      {' · '}
+                      {new Date(prompt.createdAt).toLocaleString('es-AR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </span>
+                </button>
+
+                {desplegada && (
+                  <div className="historial__cuerpo">
+                    {prompt.tally.length > 0 && <Tally tally={prompt.tally} />}
+
+                    {prompt.answers.length === 0 ? (
+                      <p className="muted" style={{ margin: '0.6rem 0 0' }}>
+                        No contestó nadie.
+                      </p>
+                    ) : (
+                      <ul className="historial__respuestas">
+                        {prompt.answers.map((answer) => (
+                          <li key={answer.id}>
+                            <span className="historial__autor">{answer.author}</span>
+                            <span>{answer.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="row" style={{ marginTop: '0.85rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn--small btn--danger"
+                        onClick={() => {
+                          if (window.confirm(`¿Borrar «${prompt.text}» y sus respuestas?`)) {
+                            void correr(() => api.deletePrompt(code, prompt.id, adminKey));
+                          }
+                        }}
+                      >
+                        Borrar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

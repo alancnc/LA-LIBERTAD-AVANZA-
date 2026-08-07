@@ -772,26 +772,107 @@ textarea {
   opacity: 0.85;
 }
 
-.prompt__previous {
+/* ------------------------------------------ historial de consignas lanzadas */
+
+.historial {
+  margin-top: 1.5rem;
   border-top: 1px solid var(--border);
-  padding-top: 0.4rem;
+  padding-top: 1rem;
 }
 
-/* Las respuestas de una consigna vieja se listan sobre fondo claro. */
-.prompt__previous .prompt__answers {
-  border-top: none;
-  padding-top: 0.3rem;
-  margin-top: 0.3rem;
+.historial__encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.7rem;
 }
 
-.prompt__previous .prompt__answer {
+.historial__encabezado h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.historial__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.historial__cabecera {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: none;
+  background: none;
+  text-align: left;
+  color: inherit;
+}
+
+.historial__cabecera:hover {
   background: var(--primary-softer);
-  color: var(--text);
 }
 
-.prompt__previous .prompt__answer-author {
+.historial__flecha {
   color: var(--primary);
-  opacity: 1;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.historial__texto {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.historial__pregunta {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.historial__resumen {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.historial__cuerpo {
+  padding: 0 0.9rem 0.9rem;
+  border-top: 1px solid var(--primary-softer);
+}
+
+.historial__respuestas {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.historial__respuestas li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  background: var(--primary-softer);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.historial__autor {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--primary);
 }
 
 /* ------------------------------------------ sorteo del orden de exposición */
