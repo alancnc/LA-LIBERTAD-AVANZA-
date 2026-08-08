@@ -30,6 +30,10 @@ export function AdminHome() {
   /** Código de la clase que está esperando confirmación para borrarse. */
   const [porBorrar, setPorBorrar] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
+  /** Código de la clase que se está renombrando, y el nombre tentativo. */
+  const [porRenombrar, setPorRenombrar] = useState<string | null>(null);
+  const [nombreNuevo, setNombreNuevo] = useState('');
+  const [renombrando, setRenombrando] = useState(false);
 
   useEffect(() => {
     void getConfig().then(
@@ -112,6 +116,27 @@ export function AdminHome() {
       setError(cause instanceof Error ? cause.message : 'No se pudo eliminar la clase');
     } finally {
       setBorrando(false);
+    }
+  }
+
+  async function renombrar(room: RoomSummary) {
+    const limpio = nombreNuevo.trim();
+    // El servidor ignora un título vacío y deja el anterior; acá se corta antes
+    // para no gastar un viaje en un cambio que no va a pasar nada.
+    if (!limpio || limpio === room.title) {
+      setPorRenombrar(null);
+      return;
+    }
+    setRenombrando(true);
+    setError(null);
+    try {
+      await api.updateRoom(room.code, { title: limpio }, room.adminKey);
+      setPorRenombrar(null);
+      await cargar();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo cambiar el nombre');
+    } finally {
+      setRenombrando(false);
     }
   }
 
@@ -272,7 +297,42 @@ export function AdminHome() {
               <div className="cluster__score-label">pendientes</div>
             </div>
             <div className="cluster__body">
-              <h3 className="cluster__label">{room.title}</h3>
+              {porRenombrar === room.code ? (
+                <form
+                  className="row"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void renombrar(room);
+                  }}
+                >
+                  <input
+                    value={nombreNuevo}
+                    onChange={(event) => setNombreNuevo(event.target.value)}
+                    maxLength={120}
+                    autoComplete="off"
+                    aria-label="Nuevo nombre de la clase"
+                    autoFocus
+                    style={{ flex: 1, minWidth: '12rem' }}
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn--small btn--primary"
+                    disabled={renombrando || !nombreNuevo.trim()}
+                  >
+                    {renombrando ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--small"
+                    onClick={() => setPorRenombrar(null)}
+                    disabled={renombrando}
+                  >
+                    Cancelar
+                  </button>
+                </form>
+              ) : (
+                <h3 className="cluster__label">{room.title}</h3>
+              )}
               <div className="cluster__meta">
                 <span className="badge badge--hot">{room.code}</span>
                 {room.closed && <span className="badge badge--discarded">cerrada</span>}
@@ -320,6 +380,16 @@ export function AdminHome() {
                   <Link to={`/r/${room.code}`} className="btn btn--small btn--ghost">
                     Ver como alumno
                   </Link>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--ghost"
+                    onClick={() => {
+                      setNombreNuevo(room.title);
+                      setPorRenombrar(room.code);
+                    }}
+                  >
+                    Renombrar
+                  </button>
                   <button
                     type="button"
                     className="btn btn--small btn--ghost btn--danger"

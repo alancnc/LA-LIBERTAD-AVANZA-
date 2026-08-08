@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import pg from 'pg';
@@ -51,6 +51,15 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
     await reset();
   });
 
+  // Cada test abre su propio repositorio y, con Postgres, eso es un pool de
+  // conexiones. Sin cerrarlos se acumulan hasta agotar el `max_connections` del
+  // servidor y la batería empieza a fallar por "too many clients" en tests que
+  // no tienen nada que ver: el síntoma aparece en el test número N, no en el
+  // que introdujo la fuga.
+  afterEach(async () => {
+    await repository.close();
+  });
+
   async function createRoom(title = 'Análisis Matemático II') {
     const response = await request(app)
       .post('/api/rooms')
@@ -84,6 +93,45 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
       const response = await request(app).get(`/api/rooms/${room.code.toLowerCase()}`);
       expect(response.status).toBe(200);
       expect(response.body.code).toBe(room.code);
+    });
+
+    it('renombra la clase', async () => {
+      const room = await createRoom('Clse mal escrita');
+      const response = await request(app)
+        .patch(`/api/rooms/${room.code}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ title: '  Formación de Dirigentes — Clase 3  ' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('Formación de Dirigentes — Clase 3');
+
+      // Y el nombre nuevo es el que ven los alumnos.
+      const board = await request(app).get(`/api/rooms/${room.code}/board`);
+      expect(board.body.room.title).toBe('Formación de Dirigentes — Clase 3');
+    });
+
+    it('no renombra sin credencial', async () => {
+      const room = await createRoom('La original');
+      const response = await request(app)
+        .patch(`/api/rooms/${room.code}`)
+        .send({ title: 'Robada' });
+      expect(response.status).toBe(403);
+
+      const sigue = await request(app).get(`/api/rooms/${room.code}`);
+      expect(sigue.body.title).toBe('La original');
+    });
+
+    it('un nombre vacío deja el que estaba', async () => {
+      const room = await createRoom('La original');
+      const response = await request(app)
+        .patch(`/api/rooms/${room.code}`)
+        .set('x-admin-key', room.adminKey)
+        .send({ title: '   ' });
+
+      // Es preferible ignorar el cambio a dejar una clase sin nombre en el
+      // listado, donde el título es lo único con lo que se la identifica.
+      expect(response.status).toBe(200);
+      expect(response.body.title).toBe('La original');
     });
 
     it('no expone la clave de admin en la vista pública', async () => {
@@ -890,15 +938,22 @@ describe.each(backends)('API sobre $name', ({ create, reset }) => {
         .set('Origin', 'https://sitio-ajeno.example');
       expect(cerrada.headers['access-control-allow-origin']).toBeUndefined();
 
-      const { app: abierta } = createApp({
-        repository: create(),
-        clientDir: null,
-        allowedOrigins: 'https://sitio-propio.example',
-      });
-      const permitida = await request(abierta)
-        .get('/api/config')
-        .set('Origin', 'https://sitio-propio.example');
-      expect(permitida.headers['access-control-allow-origin']).toBe('https://sitio-propio.example');
+      const otro = create();
+      try {
+        const { app: abierta } = createApp({
+          repository: otro,
+          clientDir: null,
+          allowedOrigins: 'https://sitio-propio.example',
+        });
+        const permitida = await request(abierta)
+          .get('/api/config')
+          .set('Origin', 'https://sitio-propio.example');
+        expect(permitida.headers['access-control-allow-origin']).toBe(
+          'https://sitio-propio.example',
+        );
+      } finally {
+        await otro.close();
+      }
     });
   });
 

@@ -346,6 +346,7 @@ falla si un cambio empeora estas métricas.
 - **Sorteo** del orden de exposición entre los profesores: se cargan los
   nombres y sale el orden completo. Es una herramienta interna del equipo, no
   toca el servidor y los nombres quedan sólo en ese navegador.
+- **Renombrar una clase** desde el listado o desde su propio panel.
 - **Eliminar una clase** que ya no se usa, con todo lo que juntó. Pide
   confirmación mostrando cuántas preguntas se pierden, y exige la contraseña
   del docente: la clave de una sala sirve para moderarla, no para borrarla.
@@ -414,7 +415,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 192 tests: agrupamiento, significado, calidad, API, acceso y sorteo
+npm test         # 198 tests: agrupamiento, significado, calidad, API, acceso y sorteo
 npm run typecheck
 ```
 

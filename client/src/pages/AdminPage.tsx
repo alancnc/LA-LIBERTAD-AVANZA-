@@ -43,6 +43,7 @@ export function AdminPage() {
   const [filter, setFilter] = useState<Filter>('activas');
   const [copied, setCopied] = useState(false);
   const [sorteoAbierto, setSorteoAbierto] = useState(false);
+  const [renombrando, setRenombrando] = useState<string | null>(null);
 
   const fetcher = useCallback(
     () => api.getAdminBoard(code, adminKey ?? ''),
@@ -180,7 +181,55 @@ export function AdminPage() {
       <header className="header">
         <div>
           <Brand subtitle="Panel del docente" />
-          <h1 style={{ marginTop: '0.85rem' }}>{data?.room.title}</h1>
+          {renombrando === null ? (
+            <h1 style={{ marginTop: '0.85rem' }}>
+              {data?.room.title}{' '}
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                onClick={() => setRenombrando(data?.room.title ?? '')}
+                title="Cambiar el nombre de la clase"
+              >
+                Renombrar
+              </button>
+            </h1>
+          ) : (
+            <form
+              className="row"
+              style={{ marginTop: '0.85rem' }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const limpio = renombrando.trim();
+                if (!limpio || limpio === data?.room.title) {
+                  setRenombrando(null);
+                  return;
+                }
+                void run((key) => api.updateRoom(code, { title: limpio }, key)).then(() =>
+                  setRenombrando(null),
+                );
+              }}
+            >
+              <input
+                value={renombrando}
+                onChange={(event) => setRenombrando(event.target.value)}
+                maxLength={120}
+                autoComplete="off"
+                aria-label="Nuevo nombre de la clase"
+                autoFocus
+                style={{ minWidth: '16rem' }}
+              />
+              <button type="submit" className="btn btn--small btn--primary">
+                Guardar
+              </button>
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => setRenombrando(null)}
+              >
+                Cancelar
+              </button>
+            </form>
+          )}
           <p className="header__sub">
             <span className={`live-dot${connected ? '' : ' live-dot--off'}`} />
             {closed ? 'Sala cerrada' : 'En vivo'}
