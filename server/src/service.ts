@@ -3,7 +3,7 @@ import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
 import { DEFAULT_SEMANTIC_THRESHOLD, type Embedder } from './text/embeddings.js';
 import type { TopicMatcher, TopicOption } from './text/claude.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
-import type { Repository } from './repository/types.js';
+import type { BoardData, Repository } from './repository/types.js';
 import type {
   AdminPrompt,
   Answer,
@@ -495,8 +495,13 @@ export class Service {
    * preguntó (aunque haya reformulado) más quien votó una de esas preguntas.
    * Los temas ya respondidos o descartados caen al final.
    */
-  async getBoard(room: Room, viewerId: string): Promise<RankedCluster[]> {
-    const { clusters, questions } = await this.repository.getBoardData(room.id);
+  /** Lectura cruda del tablero, para compartirla entre varios cálculos. */
+  getBoardData(room: Room): Promise<BoardData> {
+    return this.repository.getBoardData(room.id);
+  }
+
+  async getBoard(room: Room, viewerId: string, datos?: BoardData): Promise<RankedCluster[]> {
+    const { clusters, questions } = datos ?? (await this.repository.getBoardData(room.id));
 
     const byCluster = new Map<string, Question[]>();
     for (const question of questions) {
@@ -709,15 +714,24 @@ export class Service {
     });
   }
 
-  /** Números de cabecera para el panel del docente. */
-  async getStats(room: Room): Promise<{
+  /**
+   * Números de cabecera para el panel del docente.
+   *
+   * Acepta los datos ya leídos: el panel arma el tablero y las métricas en la
+   * misma petición, y sin esto cada sondeo traía de la base todas las preguntas
+   * de la sala dos veces, una por cada cálculo.
+   */
+  async getStats(
+    room: Room,
+    datos?: BoardData,
+  ): Promise<{
     questionCount: number;
     clusterCount: number;
     pendingCount: number;
     answeredCount: number;
     participants: number;
   }> {
-    const { clusters, questions } = await this.repository.getBoardData(room.id);
+    const { clusters, questions } = datos ?? (await this.repository.getBoardData(room.id));
 
     const activeClusterIds = new Set(questions.map((question) => question.clusterId));
     const participants = new Set(questions.map((question) => question.voterId));

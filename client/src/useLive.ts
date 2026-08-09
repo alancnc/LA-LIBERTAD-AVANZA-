@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getRealtimeMode, listenToRoom } from './api.js';
 
-/** Cada cuánto se refresca cuando el servidor no puede empujar los cambios. */
-const POLL_INTERVAL_MS = 4_000;
+/**
+ * Cada cuánto se refresca cuando el servidor no puede empujar los cambios.
+ *
+ * Estaba en 4 segundos, que en una clase de 20 personas son 18.000 lecturas de
+ * la base por hora. Con una base medida por transferencia eso agota la cuota en
+ * pocas clases, y a cambio de nada: nadie nota la diferencia entre enterarse de
+ * una pregunta nueva a los 4 segundos o a los 10.
+ */
+const POLL_INTERVAL_MS = 10_000;
 /** Refresco de respaldo con SSE activo, por si un proxy corta el stream sin avisar. */
-const SSE_FALLBACK_INTERVAL_MS = 15_000;
+const SSE_FALLBACK_INTERVAL_MS = 30_000;
 
 /**
  * Mantiene un dato de la sala sincronizado.
@@ -52,7 +59,10 @@ export function useLive<T>(
     let stopStream: (() => void) | undefined;
 
     const refresh = () => {
-      if (active) void load();
+      // Una pestaña en segundo plano no la está mirando nadie: seguir
+      // sondeando ahí es gasto puro. Y es el caso más común — el alumno deja
+      // la clase abierta en el celular y pasa a otra cosa.
+      if (active && !document.hidden) void load();
     };
 
     refresh();
@@ -70,10 +80,18 @@ export function useLive<T>(
       setConnected(true);
     });
 
+    // Al volver a la pestaña se refresca en el acto, para no quedar mirando
+    // datos viejos hasta el próximo tic.
+    const alVolver = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener('visibilitychange', alVolver);
+
     return () => {
       active = false;
       if (interval) clearInterval(interval);
       stopStream?.();
+      document.removeEventListener('visibilitychange', alVolver);
       setConnected(false);
     };
   }, [code, load, ...deps]);

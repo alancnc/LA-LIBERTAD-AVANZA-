@@ -446,6 +446,10 @@ export function createApp(options: AppOptions = {}) {
     '/rooms/:code/admin',
     route(async (req, res) => {
       const room = await roomAdmin(req);
+      // Una sola lectura del tablero, compartida entre el ranking y las
+      // métricas: este panel se sondea en bucle y cada lectura de más se paga
+      // en transferencia contra la base.
+      const datos = await service.getBoardData(room);
       res.json({
         room: {
           code: room.code,
@@ -453,8 +457,8 @@ export function createApp(options: AppOptions = {}) {
           closed: room.closed,
           threshold: room.threshold,
         },
-        stats: await service.getStats(room),
-        clusters: await service.getBoard(room, viewerId(req)),
+        stats: await service.getStats(room, datos),
+        clusters: await service.getBoard(room, viewerId(req), datos),
         prompts: await service.getPromptsForAdmin(room),
       });
     }),

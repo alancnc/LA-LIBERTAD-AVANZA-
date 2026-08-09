@@ -122,9 +122,32 @@ entender antes:
   invocaciones: sin base de datos las preguntas se perderían en medio de la
   clase. Las tablas se crean solas en el primer arranque.
 - **No hay SSE.** Sin un proceso persistente que sostenga la conexión, el
-  cliente pasa a sondear cada 4 segundos. Lo decide en tiempo de ejecución
+  cliente pasa a sondear cada 10 segundos. Lo decide en tiempo de ejecución
   consultando `/api/config`, así que el mismo código funciona en los dos modos
   sin recompilar.
+
+### El sondeo cuesta plata
+
+Cada sondeo lee el tablero de la base, y los proveedores serverless cobran (o
+cortan) por transferencia. El primer despliegue de esta app agotó la cuota
+gratuita de Neon —5 GB/mes— y dejó la aplicación caída con todas las rutas en
+error. Los números de entonces: sondeo cada 4 segundos, sin parar en pestañas
+en segundo plano, y el panel del docente leyendo el tablero entero dos veces
+por sondeo. Una clase de 20 personas eran ~18.000 lecturas por hora, y seguían
+corriendo cuando los alumnos dejaban la pestaña abierta y se iban.
+
+Lo que hay ahora:
+
+- **Sondeo cada 10 segundos.** Nadie nota la diferencia entre enterarse de una
+  pregunta a los 4 segundos o a los 10.
+- **Nada se sondea en una pestaña oculta** (`document.hidden`), que es el caso
+  más común. Al volver a la pestaña se refresca en el acto.
+- **Una sola lectura del tablero por petición.** `getStats` y `getBoard`
+  comparten los datos ya leídos en lugar de pedirlos cada uno por su cuenta:
+  el panel pasó de 7 a 5 consultas por sondeo.
+
+Si se agrega algo que sondee, conviene medirlo antes: con `log_statement=all`
+en Postgres se cuentan las consultas por petición en el log.
 
 Pasos:
 
