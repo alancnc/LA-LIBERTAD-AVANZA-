@@ -47,6 +47,15 @@ describe('resolveDatabaseUrl', () => {
       expect(resolveDatabaseUrl({ A_URL: 'postgres://u:p@directo/db', Z_URL: pooled })).toBe(pooled);
     });
 
+    it('reconoce también el pooler de Supabase, que usa otro formato de host', () => {
+      // Neon lo marca en el subdominio y Supabase con un host propio: buscar
+      // sólo "-pooler" dejaba pasar la conexión directa de Supabase, que desde
+      // Vercel ni siquiera resuelve porque es sólo IPv6.
+      const pooled = 'postgresql://postgres.abc:p@aws-0-sa-east-1.pooler.supabase.com:6543/postgres';
+      const directa = 'postgresql://postgres:p@db.abc.supabase.co:5432/postgres';
+      expect(resolveDatabaseUrl({ A_URL: directa, Z_URL: pooled })).toBe(pooled);
+    });
+
     it('no confunde una URL que no es de Postgres', () => {
       expect(resolveDatabaseUrl({ SITE_URL: 'https://ejemplo.com', API_URL: 'redis://x' })).toBeNull();
     });

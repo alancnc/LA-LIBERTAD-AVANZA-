@@ -18,9 +18,16 @@ const UNPOOLED = /UNPOOLED|NON_POOLING|NO_POOLING|DIRECT/i;
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * Cómo se reconoce un host con pooler, que es distinto en cada proveedor:
+ * Neon lo marca en el subdominio (`ep-algo-pooler.neon.tech`) y Supabase con un
+ * host propio (`aws-0-sa-east-1.pooler.supabase.com`).
+ */
+const POOLED_HOST = /-pooler|\.pooler\./i;
+
 /** Entre varias candidatas, gana la que pase por un pooler. */
 function preferPooled(candidates: Array<[string, string]>): string | undefined {
-  const pooled = candidates.find(([, value]) => value.includes('-pooler'));
+  const pooled = candidates.find(([, value]) => POOLED_HOST.test(value));
   return (pooled ?? candidates[0])?.[1];
 }
 
