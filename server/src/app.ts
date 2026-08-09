@@ -57,6 +57,12 @@ export interface AppOptions {
    * coma. Vacío (lo habitual) significa sin CORS: sólo el mismo origen.
    */
   allowedOrigins?: string;
+  /**
+   * Milisegundos que vale una lectura del tablero antes de volver a pedirla.
+   * Por defecto 3000 con Postgres y 0 con archivo. Los tests lo fijan en 0 para
+   * no tener que razonar sobre el desfase en cada aserción.
+   */
+  readCacheMs?: number;
 }
 
 /**
@@ -107,12 +113,28 @@ export function createApp(options: AppOptions = {}) {
   const semantica = createSemanticConfig();
   const embedder = options.embedder !== undefined ? options.embedder : semantica.embedder;
   const matcher = options.matcher !== undefined ? options.matcher : createTopicMatcher();
+  /**
+   * Cuánto vale una lectura del tablero antes de volver a pedirla a la base.
+   *
+   * Sólo se activa con Postgres, que es el despliegue donde muchos alumnos
+   * sondean a la vez y donde la transferencia se paga. Con archivo hay un solo
+   * proceso, leer es gratis y no tiene sentido introducir desfase.
+   *
+   * Cinco segundos contra un sondeo de diez: en el peor caso alguien ve una
+   * pregunta cinco segundos más tarde, y a cambio doscientas personas mirando
+   * la misma sala cuestan una lectura cada cinco segundos por instancia en
+   * lugar de una por persona y por sondeo. Escribir invalida la sala, así que
+   * el que pregunta, vota o responde ve su propio cambio sin esperar.
+   */
+  const readCacheMs = options.readCacheMs ?? (options.databaseUrl ? 5_000 : 0);
+
   const service = new Service(
     repository,
     adminPassword,
     embedder,
     options.semanticThreshold ?? semantica.threshold,
     matcher,
+    readCacheMs,
   );
   const persistenceMissing = Boolean(options.requirePersistence) && !options.databaseUrl;
 

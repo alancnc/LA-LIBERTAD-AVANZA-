@@ -145,6 +145,17 @@ Lo que hay ahora:
 - **Una sola lectura del tablero por petición.** `getStats` y `getBoard`
   comparten los datos ya leídos en lugar de pedirlos cada uno por su cuenta:
   el panel pasó de 7 a 5 consultas por sondeo.
+- **Caché de lectura de 5 segundos por sala** (`server/src/cache.ts`), activa
+  sólo con Postgres. Es lo que hace que el costo deje de crecer con la cantidad
+  de alumnos: doscientas personas mirando la misma sala cuestan una lectura
+  cada cinco segundos por instancia, no una por persona y por sondeo. Guarda la
+  promesa y no el valor, así cincuenta sondeos simultáneos esperan la misma
+  consulta en vez de disparar cincuenta. Cada escritura invalida su sala, de
+  modo que quien pregunta, vota o responde ve su cambio sin esperar.
+
+Con una clase de 200 personas durante 2 horas, la estimación pasa de ~35 GB a
+poco más de 1 GB. Los 5 GB gratuitos de Neon alcanzaban para media clase; ahora
+alcanzan para varias.
 
 Si se agrega algo que sondee, conviene medirlo antes: con `log_statement=all`
 en Postgres se cuentan las consultas por petición en el log.
@@ -438,7 +449,7 @@ api/index.ts               función serverless de Vercel
 ## Tests
 
 ```bash
-npm test         # 198 tests: agrupamiento, significado, calidad, API, acceso y sorteo
+npm test         # 275 tests: agrupamiento, significado, calidad, API, acceso y sorteo
 npm run typecheck
 ```
 

@@ -3,7 +3,8 @@ import { DEFAULT_THRESHOLD, findBestCluster } from './text/cluster.js';
 import { DEFAULT_SEMANTIC_THRESHOLD, type Embedder } from './text/embeddings.js';
 import type { TopicMatcher, TopicOption } from './text/claude.js';
 import { generateAdminKey, generateRoomCode, newId } from './ids.js';
-import type { BoardData, Repository } from './repository/types.js';
+import type { BoardData, PromptData, Repository } from './repository/types.js';
+import { TtlCache } from './cache.js';
 import type {
   AdminPrompt,
   Answer,
@@ -131,7 +132,52 @@ export class Service {
     private readonly semanticThreshold: number = DEFAULT_SEMANTIC_THRESHOLD,
     /** Clasificador por lenguaje. Es la señal más precisa de las tres. */
     private readonly matcher: TopicMatcher | null = null,
-  ) {}
+    /**
+     * Cuántos milisegundos vale una lectura del tablero. Es lo que evita que
+     * doscientos alumnos sondeando la misma sala se traduzcan en doscientas
+     * lecturas de la base. Con 0 queda desactivado.
+     */
+    readCacheMs = 0,
+  ) {
+    this.#tableros = new TtlCache<BoardData>(readCacheMs);
+    this.#consignas = new TtlCache<PromptData>(readCacheMs);
+  }
+
+  readonly #tableros: TtlCache<BoardData>;
+  readonly #consignas: TtlCache<PromptData>;
+
+  /**
+   * Olvida lo cacheado de una sala. Se llama en cada escritura para que quien
+   * acaba de preguntar, votar o responder vea su propio cambio enseguida.
+   */
+  #invalidar(roomId: string): void {
+    this.#tableros.invalidate(roomId);
+    this.#consignas.invalidate(roomId);
+  }
+
+  /**
+   * Envuelve una escritura para olvidar lo cacheado de esa sala.
+   *
+   * Se invalida después de escribir y también si la escritura falla: en una
+   * transacción abortada el estado no cambió, pero mientras corría pudo haberse
+   * cacheado una lectura intermedia.
+   */
+  async #escribiendo<T>(roomId: string, operacion: () => Promise<T>): Promise<T> {
+    try {
+      return await operacion();
+    } finally {
+      this.#invalidar(roomId);
+    }
+  }
+
+  /** Lectura del tablero pasando por la caché. */
+  #leerTablero(roomId: string): Promise<BoardData> {
+    return this.#tableros.get(roomId, () => this.repository.getBoardData(roomId));
+  }
+
+  #leerConsignas(roomId: string): Promise<PromptData> {
+    return this.#consignas.get(roomId, () => this.repository.getPromptData(roomId));
+  }
 
   get semanticEnabled(): boolean {
     return this.embedder !== null;
@@ -151,7 +197,7 @@ export class Service {
   private async preselectTopic(room: Room, text: string): Promise<string | null> {
     if (!this.matcher) return null;
     try {
-      const { clusters, questions } = await this.repository.getBoardData(room.id);
+      const { clusters, questions } = await this.#leerTablero(room.id);
       const abiertos = clusters.filter(
         (cluster) => cluster.status === 'pending' || cluster.status === 'answering',
       );
@@ -329,11 +375,13 @@ export class Service {
         throw new ServiceError(400, 'El umbral debe estar entre 0.15 y 0.9');
       }
     }
-    return this.repository.updateRoom(room.id, {
+    return this.#escribiendo(room.id, () =>
+      this.repository.updateRoom(room.id, {
       title,
       closed: changes.closed,
       threshold: changes.threshold,
-    });
+      }),
+    );
   }
 
   // ------------------------------------------------------------ preguntas
@@ -383,14 +431,16 @@ export class Service {
       this.preselectTopic(room, text),
     ]);
 
-    const result = await this.repository.addQuestion(
-      { roomId: room.id, text, author, voterId, embedding, preferredClusterId },
-      (candidates) =>
-        findBestCluster(text, candidates, {
-          threshold: room.threshold,
-          embedding,
-          semanticThreshold: this.semanticThreshold,
-        }),
+    const result = await this.#escribiendo(room.id, () =>
+      this.repository.addQuestion(
+        { roomId: room.id, text, author, voterId, embedding, preferredClusterId },
+        (candidates) =>
+          findBestCluster(text, candidates, {
+            threshold: room.threshold,
+            embedding,
+            semanticThreshold: this.semanticThreshold,
+          }),
+      ),
     );
 
     // Si el tema es el que eligió el clasificador, fue él quien decidió.
@@ -416,7 +466,9 @@ export class Service {
     if (question.voterId === voterId) {
       throw new ServiceError(400, 'No podés votar tu propia pregunta');
     }
-    return this.repository.toggleVote(room.id, questionId, voterId);
+    return this.#escribiendo(room.id, () =>
+      this.repository.toggleVote(room.id, questionId, voterId),
+    );
   }
 
   /** Oculta una pregunta (moderación). No se borra, para poder revisarla luego. */
@@ -424,6 +476,7 @@ export class Service {
     const question = await this.repository.getQuestion(room.id, questionId);
     if (!question) throw new ServiceError(404, 'No existe esa pregunta');
     await this.repository.hideQuestion(room.id, questionId);
+    this.#invalidar(room.id);
   }
 
   /** Saca una pregunta de su grupo y le abre un tema propio. */
@@ -446,7 +499,9 @@ export class Service {
       createdAt: Date.now(),
       answeredAt: null,
     };
-    return this.repository.splitQuestion(room.id, questionId, cluster);
+    return this.#escribiendo(room.id, () =>
+      this.repository.splitQuestion(room.id, questionId, cluster),
+    );
   }
 
   // -------------------------------------------------------------- grupos
@@ -467,11 +522,13 @@ export class Service {
     const note =
       changes.note === undefined ? undefined : changes.note.trim().slice(0, MAX_QUESTION_LENGTH);
 
-    return this.repository.updateCluster(room.id, clusterId, {
+    return this.#escribiendo(room.id, () =>
+      this.repository.updateCluster(room.id, clusterId, {
       status: changes.status,
       label,
       note,
-    });
+      }),
+    );
   }
 
   /** Fusiona dos grupos que en realidad son el mismo tema. */
@@ -483,7 +540,9 @@ export class Service {
     const target = await this.repository.getCluster(room.id, targetId);
     if (!source || !target) throw new ServiceError(404, 'No existe alguno de los grupos');
 
-    return this.repository.mergeClusters(room.id, sourceId, targetId);
+    return this.#escribiendo(room.id, () =>
+      this.repository.mergeClusters(room.id, sourceId, targetId),
+    );
   }
 
   // ------------------------------------------------------------- ranking
@@ -497,11 +556,11 @@ export class Service {
    */
   /** Lectura cruda del tablero, para compartirla entre varios cálculos. */
   getBoardData(room: Room): Promise<BoardData> {
-    return this.repository.getBoardData(room.id);
+    return this.#leerTablero(room.id);
   }
 
   async getBoard(room: Room, viewerId: string, datos?: BoardData): Promise<RankedCluster[]> {
-    const { clusters, questions } = datos ?? (await this.repository.getBoardData(room.id));
+    const { clusters, questions } = datos ?? (await this.#leerTablero(room.id));
 
     const byCluster = new Map<string, Question[]>();
     for (const question of questions) {
@@ -573,6 +632,7 @@ export class Service {
    */
   async deleteRoom(room: Room): Promise<void> {
     await this.repository.deleteRoom(room.id);
+    this.#invalidar(room.id);
   }
 
   // ------------------------------------------------- consignas del docente
@@ -592,7 +652,8 @@ export class Service {
     if (clean.length < 3) {
       throw new ServiceError(400, 'Escribí la pregunta que querés hacerle a la clase');
     }
-    return this.repository.createPrompt({
+    return this.#escribiendo(room.id, () =>
+      this.repository.createPrompt({
       id: newId(),
       roomId: room.id,
       text: clean,
@@ -600,23 +661,28 @@ export class Service {
       closed: false,
       createdAt: Date.now(),
       closedAt: null,
-    });
+      }),
+    );
   }
 
   async setPromptClosed(room: Room, promptId: string, closed: boolean): Promise<Prompt> {
     await this.requirePrompt(room, promptId);
-    return this.repository.updatePrompt(room.id, promptId, { closed });
+    return this.#escribiendo(room.id, () =>
+      this.repository.updatePrompt(room.id, promptId, { closed }),
+    );
   }
 
   async deletePrompt(room: Room, promptId: string): Promise<void> {
     await this.requirePrompt(room, promptId);
     await this.repository.deletePrompt(room.id, promptId);
+    this.#invalidar(room.id);
   }
 
   async hideAnswer(room: Room, answerId: string): Promise<void> {
     await this.repository.hideAnswer(room.id, answerId).catch(() => {
       throw new ServiceError(404, 'Respuesta inexistente');
     });
+    this.#invalidar(room.id);
   }
 
   private async requirePrompt(room: Room, promptId: string): Promise<Prompt> {
@@ -652,7 +718,8 @@ export class Service {
     const voterId = input.voterId.trim();
     if (!voterId) throw new ServiceError(400, 'Falta el identificador del participante');
 
-    return this.repository.saveAnswer({
+    return this.#escribiendo(room.id, () =>
+      this.repository.saveAnswer({
       id: newId(),
       promptId: prompt.id,
       roomId: room.id,
@@ -661,7 +728,8 @@ export class Service {
       voterId,
       createdAt: Date.now(),
       hidden: false,
-    });
+      }),
+    );
   }
 
   /**
@@ -674,7 +742,7 @@ export class Service {
    * ejercicio de copiar al primero.
    */
   async getLivePrompts(room: Room, viewerId: string): Promise<LivePrompt[]> {
-    const { prompts, answers } = await this.repository.getPromptData(room.id);
+    const { prompts, answers } = await this.#leerConsignas(room.id);
 
     return prompts.map((prompt) => {
       const suyas = answers.filter((answer) => answer.promptId === prompt.id);
@@ -697,7 +765,7 @@ export class Service {
 
   /** Todas las consignas con sus respuestas, para el panel del docente. */
   async getPromptsForAdmin(room: Room): Promise<AdminPrompt[]> {
-    const { prompts, answers } = await this.repository.getPromptData(room.id);
+    const { prompts, answers } = await this.#leerConsignas(room.id);
     return prompts.map((prompt) => {
       const suyas = answers.filter((answer) => answer.promptId === prompt.id);
       return {
@@ -731,7 +799,7 @@ export class Service {
     answeredCount: number;
     participants: number;
   }> {
-    const { clusters, questions } = datos ?? (await this.repository.getBoardData(room.id));
+    const { clusters, questions } = datos ?? (await this.#leerTablero(room.id));
 
     const activeClusterIds = new Set(questions.map((question) => question.clusterId));
     const participants = new Set(questions.map((question) => question.voterId));

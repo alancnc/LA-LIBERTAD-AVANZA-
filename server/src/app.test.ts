@@ -1193,6 +1193,128 @@ describe('describeHost', () => {
   });
 });
 
+describe('caché de lectura', () => {
+  /** Repositorio que cuenta cuántas veces se leyó el tablero de verdad. */
+  function repositorioQueCuenta() {
+    const real = new JsonRepository(null);
+    let lecturas = 0;
+    const proxy = new Proxy(real, {
+      get(target, prop, receiver) {
+        if (prop === 'getBoardData') {
+          return (roomId: string) => {
+            lecturas += 1;
+            return real.getBoardData(roomId);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as Repository;
+    return { repository: proxy, get lecturas() { return lecturas; } };
+  }
+
+  async function salaCon(app: Express) {
+    const room = await request(app)
+      .post('/api/rooms')
+      .set('x-admin-password', 'clave')
+      .send({ title: 'Clase' });
+    return room.body as { code: string; adminKey: string };
+  }
+
+  it('doscientos sondeos de la misma sala leen la base una sola vez', async () => {
+    // Es la razón de ser de la caché: una clase entera mirando el mismo tablero
+    // no puede traducirse en una lectura de la base por persona.
+    const contador = repositorioQueCuenta();
+    const { app } = createApp({
+      repository: contador.repository,
+      clientDir: null,
+      adminPassword: 'clave',
+      readCacheMs: 5_000,
+    });
+    const room = await salaCon(app);
+    const lecturasIniciales = contador.lecturas;
+
+    await Promise.all(
+      Array.from({ length: 200 }, (_, i) =>
+        request(app).get(`/api/rooms/${room.code}/board`).set('x-viewer-id', `alumno${i}`),
+      ),
+    );
+
+    expect(contador.lecturas - lecturasIniciales).toBe(1);
+  });
+
+  it('quien escribe ve su propio cambio enseguida', async () => {
+    const contador = repositorioQueCuenta();
+    const { app } = createApp({
+      repository: contador.repository,
+      clientDir: null,
+      adminPassword: 'clave',
+      readCacheMs: 60_000,
+    });
+    const room = await salaCon(app);
+
+    // Se calienta la caché con el tablero vacío.
+    const antes = await request(app).get(`/api/rooms/${room.code}/board`);
+    expect(antes.body.clusters).toHaveLength(0);
+
+    await request(app)
+      .post(`/api/rooms/${room.code}/questions`)
+      .set('x-viewer-id', 'v1')
+      .send({ text: '¿Cuándo es el parcial?', author: 'Sofía' });
+
+    // Con un TTL de un minuto, sin invalidar al escribir esto seguiría vacío.
+    const despues = await request(app).get(`/api/rooms/${room.code}/board`);
+    expect(despues.body.clusters).toHaveLength(1);
+  });
+
+  it('una respuesta a una consigna también invalida', async () => {
+    const contador = repositorioQueCuenta();
+    const { app } = createApp({
+      repository: contador.repository,
+      clientDir: null,
+      adminPassword: 'clave',
+      readCacheMs: 60_000,
+    });
+    const room = await salaCon(app);
+    const prompt = await request(app)
+      .post(`/api/rooms/${room.code}/prompts`)
+      .set('x-admin-key', room.adminKey)
+      .send({ text: '¿Qué entienden por república?' });
+
+    await request(app).get(`/api/rooms/${room.code}/board`).set('x-viewer-id', 'v1');
+    await request(app)
+      .post(`/api/rooms/${room.code}/prompts/${prompt.body.id}/answers`)
+      .set('x-viewer-id', 'v1')
+      .send({ text: 'La división de poderes', author: 'Sofía' });
+
+    const board = await request(app)
+      .get(`/api/rooms/${room.code}/board`)
+      .set('x-viewer-id', 'v1');
+    expect(board.body.prompts[0].myAnswer).toBe('La división de poderes');
+  });
+
+  it('cada sala tiene su propia entrada', async () => {
+    const contador = repositorioQueCuenta();
+    const { app } = createApp({
+      repository: contador.repository,
+      clientDir: null,
+      adminPassword: 'clave',
+      readCacheMs: 60_000,
+    });
+    const unaSala = await salaCon(app);
+    const otraSala = await salaCon(app);
+
+    await request(app)
+      .post(`/api/rooms/${unaSala.code}/questions`)
+      .set('x-viewer-id', 'v1')
+      .send({ text: '¿Cuándo es el parcial?', author: 'Sofía' });
+
+    const propia = await request(app).get(`/api/rooms/${unaSala.code}/board`);
+    const ajena = await request(app).get(`/api/rooms/${otraSala.code}/board`);
+    expect(propia.body.clusters).toHaveLength(1);
+    expect(ajena.body.clusters).toHaveLength(0);
+  });
+});
+
 describe('recuperación tras un fallo de almacenamiento', () => {
   /** Falla las primeras `fallos` inicializaciones y después funciona. */
   function repositorioIntermitente(fallos: number) {
